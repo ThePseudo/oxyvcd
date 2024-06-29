@@ -84,7 +84,7 @@ impl VCDFile {
         mut words: SplitAsciiWhitespace,
     ) -> Option<LineInfo> {
         match scope_type {
-            "module" => match words.next() {
+            "module" | "task" => match words.next() {
                 Some(scope_name) => Some(LineInfo::InScope(String::from(scope_name))),
                 None => Self::unexpected_eof(self.lineno),
             },
