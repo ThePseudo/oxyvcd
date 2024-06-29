@@ -1,0 +1,8 @@
+[package]
+name = "vcd-statistical-analysis"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vcd-reader = { path = "../vcd-reader" }
+futures = "0.3"

@@ -1,0 +1,7 @@
+[package]
+name = "vcd"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vcd-statistical-analysis = { path = "./vcd-statistical-analysis" }
