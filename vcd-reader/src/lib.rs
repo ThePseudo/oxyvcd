@@ -25,8 +25,16 @@ pub struct Signal {
 }
 
 #[derive(Debug)]
+pub struct Change {
+    pub signal_id: String,
+    pub sub_id: u16,
+}
+
+#[derive(Debug)]
 pub enum LineInfo {
     Signal(Signal),
+    Timestamp(usize),
+    Change(Change),
     DateInfo(String),
     VersionInfo(String),
     TimeScaleInfo(String),
@@ -34,6 +42,7 @@ pub enum LineInfo {
     UpScope,
     ParsingError(String),
     EndDefinitions,
+    EndInitializations,
     Useless,
 }
 
@@ -205,6 +214,18 @@ impl VCDFile {
     }
 
     fn next_initializations(&mut self) -> Option<LineInfo> {
+        let mut line_slice = "";
+        while line_slice.len() == 0 {
+            if self.read_line() == 0 {
+                return None;
+            }
+            line_slice = self.line.trim();
+        }
+        match line_slice {
+            "$dumpports" => return Some(LineInfo::Useless),
+            "$end" => return Some(LineInfo::EndInitializations),
+            _ => {}
+        }
         None
     }
 
