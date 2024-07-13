@@ -31,6 +31,20 @@ pub struct Change {
 }
 
 #[derive(Debug)]
+pub enum SignalValue {
+    UP,
+    DOWN,
+    X,
+    Z,
+}
+
+impl Default for SignalValue {
+    fn default() -> Self {
+        Self::X
+    }
+}
+
+#[derive(Debug)]
 pub enum LineInfo {
     Signal(Signal),
     Timestamp(usize),
@@ -278,6 +292,17 @@ impl Iterator for VCDFile {
             Part::Declarations => self.next_declarations(),
             Part::Initializations => self.next_initializations(),
             Part::Changes => self.next_changes(),
+        }
+    }
+}
+
+impl From<u8> for SignalValue {
+    fn from(val: u8) -> Self {
+        match val {
+            b'D' | b'd' | b'L' | b'l' | b'0' => SignalValue::DOWN,
+            b'U' | b'u' | b'H' | b'h' | b'1' => SignalValue::UP,
+            b'F' | b'Z' | b'T' | b'z' => SignalValue::Z,
+            _ => SignalValue::X,
         }
     }
 }

@@ -1,11 +1,11 @@
+use spinners::{Spinner, Spinners};
 use std::{
     collections::HashMap,
     sync::mpsc::{self, Receiver},
     thread,
     time::Instant,
 };
-
-use spinners::{Spinner, Spinners};
+use vcd_reader::SignalValue;
 use vcd_reader::{LineInfo, VCDFile};
 
 pub fn perform_analysis(file_name: &str) {
@@ -22,20 +22,6 @@ pub fn perform_analysis(file_name: &str) {
 
 struct InfoTranslator {
     modules: Vec<String>,
-}
-
-#[derive(Debug)]
-enum SignalValue {
-    UP,
-    DOWN,
-    X,
-    Z,
-}
-
-impl Default for SignalValue {
-    fn default() -> Self {
-        Self::X
-    }
 }
 
 #[derive(Debug)]
@@ -208,15 +194,4 @@ fn translate_definitions(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiver<L
     let end = Instant::now();
     println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
     infos
-}
-
-impl From<u8> for SignalValue {
-    fn from(val: u8) -> Self {
-        match val {
-            b'D' | b'd' | b'L' | b'l' | b'0' => SignalValue::DOWN,
-            b'U' | b'u' | b'H' | b'h' | b'1' => SignalValue::UP,
-            b'F' | b'Z' | b'T' | b'z' => SignalValue::Z,
-            _ => SignalValue::X,
-        }
-    }
 }
