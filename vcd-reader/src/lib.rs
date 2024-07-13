@@ -244,8 +244,29 @@ impl VCDFile {
         }
     }
 
-    fn next_changes(&self) -> Option<LineInfo> {
-        None
+    fn next_changes(&mut self) -> Option<LineInfo> {
+        let mut line_slice = "";
+        while line_slice.len() == 0 {
+            if self.read_line() == 0 {
+                return None;
+            }
+            line_slice = self.line.trim();
+        }
+        if line_slice.starts_with('#') {
+            return Some(LineInfo::Timestamp(line_slice[1..].parse().unwrap()));
+        } else {
+            if line_slice.starts_with('b') {
+                line_slice = &line_slice[1..];
+            } else if line_slice.starts_with('p') {
+            }
+            let mut line_parts = line_slice.split('<');
+            let values = line_parts.next().unwrap();
+            let signal_id = line_parts.next().unwrap();
+            return Some(LineInfo::Change(Change {
+                signal_id: String::from(signal_id),
+                values: String::from(values),
+            }));
+        }
     }
 }
 
