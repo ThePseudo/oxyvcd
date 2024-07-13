@@ -27,7 +27,7 @@ pub struct Signal {
 #[derive(Debug)]
 pub struct Change {
     pub signal_id: String,
-    pub values: String,
+    pub values: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -237,7 +237,7 @@ impl VCDFile {
                     let signal_id = line_parts.next().unwrap();
                     return Some(LineInfo::Change(Change {
                         signal_id: String::from(signal_id),
-                        values: String::from(values),
+                        values: values.into(),
                     }));
                 }
             }
@@ -264,7 +264,7 @@ impl VCDFile {
             let signal_id = line_parts.next().unwrap();
             return Some(LineInfo::Change(Change {
                 signal_id: String::from(signal_id),
-                values: String::from(values),
+                values: values.into(),
             }));
         }
     }

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     sync::mpsc::{self, Receiver},
     thread,
     time::Instant,
@@ -23,6 +24,7 @@ struct InfoTranslator {
     modules: Vec<String>,
 }
 
+#[derive(Debug)]
 enum SignalValue {
     UP,
     DOWN,
@@ -30,16 +32,39 @@ enum SignalValue {
     Z,
 }
 
-struct Signal {
-    id: String,
-    sub_id: u16,
-    name: String,
-    initial_value: SignalValue,
+impl Default for SignalValue {
+    fn default() -> Self {
+        Self::X
+    }
 }
 
-#[derive(Default)]
+#[derive(Debug)]
+struct State {
+    value: SignalValue,
+    time: i64,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        State {
+            value: Default::default(),
+            time: -1,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Signal {
+    id: Box<str>,
+    sub_id: u16,
+    name: Box<str>,
+    states: [State; 4],
+}
+
+#[derive(Default, Debug)]
 struct VCD {
     signals: Vec<Signal>,
+    signals_by_id: HashMap<String, usize>,
 }
 
 impl VCD {
@@ -47,17 +72,27 @@ impl VCD {
         let mut modules = translator.modules.join("/");
         modules.push_str(&signal.name);
         for sub_id in 0..signal.num_values {
-            let mut s = Signal {
-                id: signal.id.clone(),
-                sub_id: sub_id.try_into().unwrap(),
-                name: modules.clone(),
-                initial_value: SignalValue::X,
-            };
+            let mut name = modules.clone();
             if signal.num_values > 1 {
-                s.name.push_str(&format!("{}", s.sub_id));
+                name.push_str(&format!("{}", sub_id));
             }
+            let s = Signal {
+                id: signal.id.clone().into(),
+                sub_id: sub_id.try_into().unwrap(),
+                name: name.into(),
+                states: Default::default(),
+            };
+            let index = self.signals.len();
             self.signals.push(s);
+            let id = self.signals.last().unwrap().id.clone();
+            if sub_id == 0 {
+                self.signals_by_id.insert(String::from(id), index);
+            }
         }
+    }
+
+    fn get_signal(&mut self, id: &str, sub_id: usize) -> &mut Signal {
+        &mut self.signals[self.signals_by_id.get(id).unwrap() + sub_id]
     }
 }
 
@@ -78,25 +113,28 @@ fn translate_changes(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiver<LineI
             LineInfo::TimeScaleInfo(_) => unreachable!("Error: Time scale info not expected here"),
             LineInfo::InScope(_) => unreachable!("Error: Scope definitions not expected here"),
             LineInfo::UpScope => unreachable!("Error: Upscope not expected here"),
-            LineInfo::ParsingError(s) => {
-                println!("{}", s);
-                break;
-            }
             LineInfo::EndDefinitions => {
                 unreachable!("Error: Definitions should have already ended")
             }
             LineInfo::EndInitializations => {
                 unreachable!("Error: Initializations should have already ended")
             }
-            LineInfo::Timestamp(_) => todo!(),
-            LineInfo::Change(_) => todo!(),
-            LineInfo::Useless => todo!(),
+            LineInfo::Useless => {}
+            LineInfo::ParsingError(s) => {
+                println!("{}", s);
+                break;
+            }
+
+            LineInfo::Timestamp(t) => todo!(),
+            LineInfo::Change(c) => todo!(),
         }
     }
     infos
 }
 
 fn translate_initializations(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
+    let mut current_timestamp: i64 = 0;
+    let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal initializations".into());
     for info in infos.iter() {
         println!("{:?}", info);
         match info {
@@ -106,19 +144,26 @@ fn translate_initializations(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiv
             LineInfo::TimeScaleInfo(_) => unreachable!("Error: Time scale info not expected here"),
             LineInfo::InScope(_) => unreachable!("Error: Scope definitions not expected here"),
             LineInfo::UpScope => unreachable!("Error: Upscope not expected here"),
+            LineInfo::EndDefinitions => {
+                unreachable!("Error: Definitions should have already ended")
+            }
+            LineInfo::Useless => {}
             LineInfo::ParsingError(s) => {
                 println!("{}", s);
                 break;
             }
-            LineInfo::EndDefinitions => {
-                unreachable!("Error: Definitions should have already ended")
-            }
-            LineInfo::Timestamp(_) => todo!(),
-            LineInfo::Change(_) => todo!(),
             LineInfo::EndInitializations => {
+                sp.stop_with_message(String::from("Signals initialized correctly"));
                 break;
             }
-            LineInfo::Useless => todo!(),
+            LineInfo::Timestamp(t) => current_timestamp = t as i64,
+            LineInfo::Change(c) => c.values.into_iter().enumerate().for_each(|(index, value)| {
+                let signal = vcd.get_signal(&c.signal_id, index);
+                signal.states[0] = State {
+                    value: SignalValue::from(value),
+                    time: current_timestamp,
+                }
+            }),
         }
     }
     infos
@@ -163,4 +208,15 @@ fn translate_definitions(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiver<L
     let end = Instant::now();
     println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
     infos
+}
+
+impl From<u8> for SignalValue {
+    fn from(val: u8) -> Self {
+        match val {
+            b'D' | b'd' | b'L' | b'l' | b'0' => SignalValue::DOWN,
+            b'U' | b'u' | b'H' | b'h' | b'1' => SignalValue::UP,
+            b'F' | b'Z' | b'T' | b'z' => SignalValue::Z,
+            _ => SignalValue::X,
+        }
+    }
 }
