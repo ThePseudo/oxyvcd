@@ -1,7 +1,7 @@
 use std::{
     sync::mpsc::{self, Receiver},
     thread,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use spinners::{Spinner, Spinners};
@@ -15,6 +15,7 @@ pub fn perform_analysis(file_name: &str) {
     VCDFile::new(file_name).into_iter().for_each(|info| {
         tx.send(info).unwrap();
     });
+    drop(tx);
     th.join().unwrap();
 }
 
@@ -60,15 +61,16 @@ impl VCD {
     }
 }
 
-fn translate_infos(infos: Receiver<LineInfo>) {
+fn translate_infos(mut infos: Receiver<LineInfo>) {
     let mut vcd = VCD::default();
-    translate_definitions(&mut vcd, &infos);
-    translate_initializations(&mut vcd, &infos);
-    translate_changes(&mut vcd, &infos);
+    infos = translate_definitions(&mut vcd, infos);
+    infos = translate_initializations(&mut vcd, infos);
+    translate_changes(&mut vcd, infos);
 }
 
-fn translate_changes(vcd: &mut VCD, infos: &Receiver<LineInfo>) {
-    for info in infos {
+fn translate_changes(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
+    for info in infos.iter() {
+        println!("{:?}", info);
         match info {
             LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
             LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
@@ -91,10 +93,12 @@ fn translate_changes(vcd: &mut VCD, infos: &Receiver<LineInfo>) {
             LineInfo::Useless => todo!(),
         }
     }
+    infos
 }
 
-fn translate_initializations(vcd: &mut VCD, infos: &Receiver<LineInfo>) {
-    for info in infos {
+fn translate_initializations(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
+    for info in infos.iter() {
+        println!("{:?}", info);
         match info {
             LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
             LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
@@ -117,14 +121,15 @@ fn translate_initializations(vcd: &mut VCD, infos: &Receiver<LineInfo>) {
             LineInfo::Useless => todo!(),
         }
     }
+    infos
 }
 
-fn translate_definitions(vcd: &mut VCD, infos: &Receiver<LineInfo>) {
+fn translate_definitions(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
     println!("");
     let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal declarations".into());
     let start = Instant::now();
     let mut translator = InfoTranslator { modules: vec![] };
-    for info in infos {
+    for info in infos.iter() {
         match info {
             LineInfo::Signal(s) => vcd.push(s, &translator),
             LineInfo::DateInfo(s) => println!("Date: {}", s.trim().replace("$end", "").trim()),
@@ -157,4 +162,5 @@ fn translate_definitions(vcd: &mut VCD, infos: &Receiver<LineInfo>) {
     }
     let end = Instant::now();
     println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
+    infos
 }

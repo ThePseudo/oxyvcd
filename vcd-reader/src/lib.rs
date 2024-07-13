@@ -27,7 +27,7 @@ pub struct Signal {
 #[derive(Debug)]
 pub struct Change {
     pub signal_id: String,
-    pub sub_id: u16,
+    pub values: String,
 }
 
 #[derive(Debug)]
@@ -224,9 +224,24 @@ impl VCDFile {
         match line_slice {
             "$dumpports" => return Some(LineInfo::Useless),
             "$end" => return Some(LineInfo::EndInitializations),
-            _ => {}
+            _ => {
+                if line_slice.starts_with('#') {
+                    return Some(LineInfo::Timestamp(line_slice[1..].parse().unwrap()));
+                } else {
+                    if line_slice.starts_with('b') {
+                        line_slice = &line_slice[1..];
+                    } else if line_slice.starts_with('p') {
+                    }
+                    let mut line_parts = line_slice.split('<');
+                    let values = line_parts.next().unwrap();
+                    let signal_id = line_parts.next().unwrap();
+                    return Some(LineInfo::Change(Change {
+                        signal_id: String::from(signal_id),
+                        values: String::from(values),
+                    }));
+                }
+            }
         }
-        None
     }
 
     fn next_changes(&self) -> Option<LineInfo> {
