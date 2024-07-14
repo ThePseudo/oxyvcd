@@ -6,7 +6,7 @@ use std::{
     thread,
     time::Instant,
 };
-use vcd_reader::SignalValue;
+use vcd_reader::{Change, SignalValue};
 use vcd_reader::{LineInfo, VCDFile};
 
 pub fn perform_analysis(file_name: &str) {
@@ -48,6 +48,10 @@ struct Signal {
     states: [State; 4],
 }
 
+impl Signal {
+    fn add_change(&self, state: State) {}
+}
+
 #[derive(Default, Debug)]
 struct VCD {
     signals: Vec<Signal>,
@@ -82,9 +86,25 @@ impl VCD {
         &mut self.signals[self.signals_by_id.get(id).unwrap() + sub_id]
     }
 
+    fn add_change(&mut self, change: Change, time: i64) {
+        change
+            .values
+            .into_iter()
+            .enumerate()
+            .for_each(|(sub_id, state)| {
+                self.get_signal(&change.signal_id, sub_id)
+                    .add_change(State {
+                        value: SignalValue::from(state),
+                        time,
+                    })
+            })
+    }
+
     fn translate_changes(&mut self, infos: Receiver<LineInfo>) {
         println!("");
+        let mut current_timestamp: i64 = -1;
         for info in infos.into_iter() {
+            println!("{:?}", info);
             match info {
                 LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
                 LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
@@ -106,8 +126,8 @@ impl VCD {
                     break;
                 }
 
-                LineInfo::Timestamp(t) => todo!(),
-                LineInfo::Change(c) => todo!(),
+                LineInfo::Timestamp(t) => current_timestamp = t as i64,
+                LineInfo::Change(c) => self.add_change(c, current_timestamp),
             }
         }
     }
