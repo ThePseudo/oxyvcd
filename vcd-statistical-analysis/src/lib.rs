@@ -80,118 +80,127 @@ impl VCD {
     fn get_signal(&mut self, id: &str, sub_id: usize) -> &mut Signal {
         &mut self.signals[self.signals_by_id.get(id).unwrap() + sub_id]
     }
+
+    fn translate_changes(&mut self, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
+        for info in infos.iter() {
+            println!("{:?}", info);
+            match info {
+                LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
+                LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
+                LineInfo::VersionInfo(_) => unreachable!("Error: Version info not expected here"),
+                LineInfo::TimeScaleInfo(_) => {
+                    unreachable!("Error: Time scale info not expected here")
+                }
+                LineInfo::InScope(_) => unreachable!("Error: Scope definitions not expected here"),
+                LineInfo::UpScope => unreachable!("Error: Upscope not expected here"),
+                LineInfo::EndDefinitions => {
+                    unreachable!("Error: Definitions should have already ended")
+                }
+                LineInfo::EndInitializations => {
+                    unreachable!("Error: Initializations should have already ended")
+                }
+                LineInfo::Useless => {}
+                LineInfo::ParsingError(s) => {
+                    println!("{}", s);
+                    break;
+                }
+
+                LineInfo::Timestamp(t) => todo!(),
+                LineInfo::Change(c) => todo!(),
+            }
+        }
+        infos
+    }
+
+    fn translate_initializations(&mut self, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
+        let mut current_timestamp: i64 = 0;
+        let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal initializations".into());
+        for info in infos.iter() {
+            println!("{:?}", info);
+            match info {
+                LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
+                LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
+                LineInfo::VersionInfo(_) => unreachable!("Error: Version info not expected here"),
+                LineInfo::TimeScaleInfo(_) => {
+                    unreachable!("Error: Time scale info not expected here")
+                }
+                LineInfo::InScope(_) => unreachable!("Error: Scope definitions not expected here"),
+                LineInfo::UpScope => unreachable!("Error: Upscope not expected here"),
+                LineInfo::EndDefinitions => {
+                    unreachable!("Error: Definitions should have already ended")
+                }
+                LineInfo::Useless => {}
+                LineInfo::ParsingError(s) => {
+                    println!("{}", s);
+                    break;
+                }
+                LineInfo::EndInitializations => {
+                    sp.stop_with_message(String::from("Signals initialized correctly"));
+                    break;
+                }
+                LineInfo::Timestamp(t) => current_timestamp = t as i64,
+                LineInfo::Change(c) => {
+                    c.values.into_iter().enumerate().for_each(|(index, value)| {
+                        let signal = self.get_signal(&c.signal_id, index);
+                        signal.states[0] = State {
+                            value: SignalValue::from(value),
+                            time: current_timestamp,
+                        }
+                    })
+                }
+            }
+        }
+        infos
+    }
+
+    fn translate_definitions(&mut self, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
+        println!("");
+        let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal declarations".into());
+        let start = Instant::now();
+        let mut translator = InfoTranslator { modules: vec![] };
+        for info in infos.iter() {
+            println!("{:?}", info);
+            match info {
+                LineInfo::Signal(s) => self.push(s, &translator),
+                LineInfo::DateInfo(s) => println!("Date: {}", s.trim().replace("$end", "").trim()),
+                LineInfo::VersionInfo(s) => {
+                    println!("Tool: {}", s.trim().replace("$end", "").trim())
+                }
+                LineInfo::TimeScaleInfo(s) => {
+                    println!("Time scale: {}", s.trim().replace("$end", "").trim())
+                }
+                LineInfo::InScope(module) => translator.modules.push(module),
+                LineInfo::UpScope => {
+                    translator.modules.pop().unwrap();
+                }
+                LineInfo::ParsingError(s) => {
+                    println!("{}", s);
+                    break;
+                }
+                LineInfo::EndDefinitions => {
+                    sp.stop_with_message(format!(
+                        "Signals read correctly. Number of signals: {}",
+                        self.signals.len()
+                    ));
+                    break;
+                }
+                LineInfo::Useless => {}
+                LineInfo::Timestamp(t) => panic!("Unexpected timestamp: {:?}", t),
+                LineInfo::Change(c) => panic!("Unexpected change: {:?}", c),
+                LineInfo::EndInitializations => {
+                    panic!("End initializations found before the beginning!")
+                }
+            }
+        }
+        let end = Instant::now();
+        println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
+        infos
+    }
 }
 
 fn translate_infos(mut infos: Receiver<LineInfo>) {
     let mut vcd = VCD::default();
-    infos = translate_definitions(&mut vcd, infos);
-    infos = translate_initializations(&mut vcd, infos);
-    translate_changes(&mut vcd, infos);
-}
-
-fn translate_changes(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
-    for info in infos.iter() {
-        println!("{:?}", info);
-        match info {
-            LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
-            LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
-            LineInfo::VersionInfo(_) => unreachable!("Error: Version info not expected here"),
-            LineInfo::TimeScaleInfo(_) => unreachable!("Error: Time scale info not expected here"),
-            LineInfo::InScope(_) => unreachable!("Error: Scope definitions not expected here"),
-            LineInfo::UpScope => unreachable!("Error: Upscope not expected here"),
-            LineInfo::EndDefinitions => {
-                unreachable!("Error: Definitions should have already ended")
-            }
-            LineInfo::EndInitializations => {
-                unreachable!("Error: Initializations should have already ended")
-            }
-            LineInfo::Useless => {}
-            LineInfo::ParsingError(s) => {
-                println!("{}", s);
-                break;
-            }
-
-            LineInfo::Timestamp(t) => todo!(),
-            LineInfo::Change(c) => todo!(),
-        }
-    }
-    infos
-}
-
-fn translate_initializations(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
-    let mut current_timestamp: i64 = 0;
-    let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal initializations".into());
-    for info in infos.iter() {
-        println!("{:?}", info);
-        match info {
-            LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
-            LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
-            LineInfo::VersionInfo(_) => unreachable!("Error: Version info not expected here"),
-            LineInfo::TimeScaleInfo(_) => unreachable!("Error: Time scale info not expected here"),
-            LineInfo::InScope(_) => unreachable!("Error: Scope definitions not expected here"),
-            LineInfo::UpScope => unreachable!("Error: Upscope not expected here"),
-            LineInfo::EndDefinitions => {
-                unreachable!("Error: Definitions should have already ended")
-            }
-            LineInfo::Useless => {}
-            LineInfo::ParsingError(s) => {
-                println!("{}", s);
-                break;
-            }
-            LineInfo::EndInitializations => {
-                sp.stop_with_message(String::from("Signals initialized correctly"));
-                break;
-            }
-            LineInfo::Timestamp(t) => current_timestamp = t as i64,
-            LineInfo::Change(c) => c.values.into_iter().enumerate().for_each(|(index, value)| {
-                let signal = vcd.get_signal(&c.signal_id, index);
-                signal.states[0] = State {
-                    value: SignalValue::from(value),
-                    time: current_timestamp,
-                }
-            }),
-        }
-    }
-    infos
-}
-
-fn translate_definitions(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
-    println!("");
-    let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal declarations".into());
-    let start = Instant::now();
-    let mut translator = InfoTranslator { modules: vec![] };
-    for info in infos.iter() {
-        match info {
-            LineInfo::Signal(s) => vcd.push(s, &translator),
-            LineInfo::DateInfo(s) => println!("Date: {}", s.trim().replace("$end", "").trim()),
-            LineInfo::VersionInfo(s) => println!("Tool: {}", s.trim().replace("$end", "").trim()),
-            LineInfo::TimeScaleInfo(s) => {
-                println!("Time scale: {}", s.trim().replace("$end", "").trim())
-            }
-            LineInfo::InScope(module) => translator.modules.push(module),
-            LineInfo::UpScope => {
-                translator.modules.pop().unwrap();
-            }
-            LineInfo::ParsingError(s) => {
-                println!("{}", s);
-                break;
-            }
-            LineInfo::EndDefinitions => {
-                sp.stop_with_message(format!(
-                    "Signals read correctly. Number of signals: {}",
-                    vcd.signals.len()
-                ));
-                break;
-            }
-            LineInfo::Useless => {}
-            LineInfo::Timestamp(t) => panic!("Unexpected timestamp: {:?}", t),
-            LineInfo::Change(c) => panic!("Unexpected change: {:?}", c),
-            LineInfo::EndInitializations => {
-                panic!("End initializations found before the beginning!")
-            }
-        }
-    }
-    let end = Instant::now();
-    println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
-    infos
+    infos = vcd.translate_definitions(infos);
+    infos = vcd.translate_initializations(infos);
+    vcd.translate_changes(infos);
 }

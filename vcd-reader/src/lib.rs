@@ -9,6 +9,7 @@ pub struct VCDFile {
     line: String,
     lineno: usize,
     part: Part,
+    separator: char,
 }
 
 enum Part {
@@ -72,6 +73,7 @@ impl VCDFile {
             line: Default::default(),
             lineno: 0,
             part: Part::Declarations,
+            separator: '<',
         }
     }
 
@@ -155,13 +157,20 @@ impl VCDFile {
                         Some(value) => value.parse().unwrap(),
                         None => return Self::unexpected_eof(self.lineno),
                     };
-                    s.num_values = i32::abs(end - start) as usize;
+                    s.num_values = (i32::abs(end - start) + 1) as usize;
                 }
             }
             None => return Self::unexpected_eof(self.lineno),
         }
         match split_line.next() {
-            Some(id) => s.id = String::from(id),
+            Some(mut id) => {
+                s.id = {
+                    if id.starts_with(self.separator) {
+                        id = &id[1..];
+                    }
+                    String::from(id)
+                }
+            }
             None => return Self::unexpected_eof(self.lineno),
         }
         match split_line.next() {
@@ -248,7 +257,10 @@ impl VCDFile {
                     }
                     let mut line_parts = line_slice.split('<');
                     let values = line_parts.next().unwrap();
-                    let signal_id = line_parts.next().unwrap();
+                    let mut signal_id = line_parts.next().unwrap();
+                    if signal_id.starts_with(self.separator) {
+                        signal_id = &signal_id[1..];
+                    }
                     return Some(LineInfo::Change(Change {
                         signal_id: String::from(signal_id),
                         values: values.into(),
