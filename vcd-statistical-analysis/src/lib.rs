@@ -1,6 +1,7 @@
 use spinners::{Spinner, Spinners};
 use std::{
     collections::HashMap,
+    rc::Rc,
     sync::mpsc::{self, Receiver},
     thread,
     time::Instant,
@@ -41,7 +42,7 @@ impl Default for State {
 
 #[derive(Debug)]
 struct Signal {
-    id: Box<str>,
+    id: Rc<str>,
     sub_id: u16,
     name: Box<str>,
     states: [State; 4],
@@ -50,7 +51,7 @@ struct Signal {
 #[derive(Default, Debug)]
 struct VCD {
     signals: Vec<Signal>,
-    signals_by_id: HashMap<String, usize>,
+    signals_by_id: HashMap<Rc<str>, usize>,
 }
 
 impl VCD {
@@ -72,7 +73,7 @@ impl VCD {
             self.signals.push(s);
             let id = self.signals.last().unwrap().id.clone();
             if sub_id == 0 {
-                self.signals_by_id.insert(String::from(id), index);
+                self.signals_by_id.insert(id.clone(), index);
             }
         }
     }
@@ -81,9 +82,9 @@ impl VCD {
         &mut self.signals[self.signals_by_id.get(id).unwrap() + sub_id]
     }
 
-    fn translate_changes(&mut self, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
-        for info in infos.iter() {
-            println!("{:?}", info);
+    fn translate_changes(&mut self, infos: Receiver<LineInfo>) {
+        println!("");
+        for info in infos.into_iter() {
             match info {
                 LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
                 LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
@@ -109,14 +110,14 @@ impl VCD {
                 LineInfo::Change(c) => todo!(),
             }
         }
-        infos
     }
 
     fn translate_initializations(&mut self, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
+        println!("");
         let mut current_timestamp: i64 = 0;
+        let start = Instant::now();
         let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal initializations".into());
         for info in infos.iter() {
-            println!("{:?}", info);
             match info {
                 LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
                 LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
@@ -150,6 +151,8 @@ impl VCD {
                 }
             }
         }
+        let end = Instant::now();
+        println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
         infos
     }
 
@@ -159,7 +162,6 @@ impl VCD {
         let start = Instant::now();
         let mut translator = InfoTranslator { modules: vec![] };
         for info in infos.iter() {
-            println!("{:?}", info);
             match info {
                 LineInfo::Signal(s) => self.push(s, &translator),
                 LineInfo::DateInfo(s) => println!("Date: {}", s.trim().replace("$end", "").trim()),
