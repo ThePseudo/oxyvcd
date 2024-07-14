@@ -1,31 +1,39 @@
 use spinners::{Spinner, Spinners};
 use std::{
     collections::HashMap,
+    fs::File,
+    io::{BufWriter, Write},
     rc::Rc,
-    sync::mpsc::{self, Receiver},
+    sync::{
+        mpsc::{self, Receiver},
+        Arc,
+    },
     thread,
     time::Instant,
 };
 use vcd_reader::{Change, SignalValue};
 use vcd_reader::{LineInfo, VCDFile};
 
-pub fn perform_analysis(file_name: &str) {
+pub fn perform_analysis(file_name: &str, out_file: &str) {
     let (tx, rx) = mpsc::sync_channel(1000000);
-    let th = thread::spawn(move || {
-        translate_infos(rx);
-    });
+    let th = thread::spawn(move || translate_infos(rx));
     VCDFile::new(file_name).into_iter().for_each(|info| {
         tx.send(info).unwrap();
     });
     drop(tx);
-    th.join().unwrap();
+    let vcd = th.join().unwrap();
+
+    let mut writer = BufWriter::new(File::create(out_file).unwrap());
+    writer
+        .write_fmt(format_args!("{}", vcd.to_result_string()))
+        .unwrap();
 }
 
 struct InfoTranslator {
     modules: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct State {
     value: SignalValue,
     time: i64,
@@ -42,20 +50,101 @@ impl Default for State {
 
 #[derive(Debug)]
 struct Signal {
-    id: Rc<str>,
+    id: Arc<str>,
     sub_id: u16,
     name: Box<str>,
-    states: [State; 4],
+    states: [State; 4], // Initial state, current state, opposite state, back to initial state
 }
 
 impl Signal {
-    fn add_change(&self, state: State) {}
+    fn add_change(&mut self, state: State) {
+        if self.states[1].value != SignalValue::UP || self.states[1].value != SignalValue::DOWN {
+            match self.states[0].value {
+                SignalValue::UP => {
+                    if self.states[1].value == SignalValue::UP
+                        && state.value == SignalValue::DOWN
+                        && self.states[2].value != SignalValue::X
+                    // update once
+                    {
+                        self.states[2] = state;
+                    } else if self.states[1].value == SignalValue::DOWN
+                        && state.value == SignalValue::UP
+                        && self.states[2].value != SignalValue::X // update only when states[2] updated
+                        && self.states[3].value != SignalValue::X
+                    // update once
+                    {
+                        self.states[3] = state;
+                    }
+                }
+                SignalValue::DOWN => {
+                    if self.states[1].value == SignalValue::DOWN
+                        && state.value == SignalValue::UP
+                        && self.states[2].value != SignalValue::X
+                    // update once
+                    {
+                        self.states[2] = state;
+                    } else if self.states[1].value == SignalValue::UP
+                        && state.value == SignalValue::DOWN
+                        && self.states[2].value != SignalValue::X // update only when states[2] updated
+                        && self.states[3].value != SignalValue::X
+                    // update once
+                    {
+                        self.states[3] = state;
+                    }
+                }
+                _ => {
+                    self.states[0] = state;
+                }
+            }
+        }
+        self.states[1] = state;
+    }
+
+    fn calculate_coverage(&self) -> f32 {
+        let first_transition = 0.5 * ((self.states[2].value != SignalValue::X) as u32 as f32);
+        let second_transition = 0.5 * ((self.states[2].value != SignalValue::X) as u32 as f32);
+        first_transition + second_transition
+    }
+
+    fn has_transitioned_up(&self) -> bool {
+        match self.states[0].value {
+            SignalValue::UP => self.states[3].value != SignalValue::X,
+            SignalValue::DOWN => self.states[2].value != SignalValue::X,
+            _ => false,
+        }
+    }
+
+    fn has_transitioned_down(&self) -> bool {
+        match self.states[0].value {
+            SignalValue::UP => self.states[2].value != SignalValue::X,
+            SignalValue::DOWN => self.states[3].value != SignalValue::X,
+            _ => false,
+        }
+    }
+
+    fn to_result_string(&self) -> String {
+        let initial_value: char = self.states[0].value.into();
+        format!(
+            "{} {}-{} {:.1} {} {} {}",
+            self.name,
+            self.id,
+            self.sub_id,
+            self.calculate_coverage(),
+            self.has_transitioned_up() as u8,
+            self.has_transitioned_down() as u8,
+            initial_value
+        )
+    }
+
+    fn result_explanation() -> &'static str {
+        "# Signal name, id-sub_id, coverage [%], has transitioned up, has transitioned down, initial value"
+    }
 }
 
 #[derive(Default, Debug)]
 struct VCD {
     signals: Vec<Signal>,
-    signals_by_id: HashMap<Rc<str>, usize>,
+    signals_by_id: HashMap<Arc<str>, usize>,
 }
 
 impl VCD {
@@ -103,8 +192,9 @@ impl VCD {
     fn translate_changes(&mut self, infos: Receiver<LineInfo>) {
         println!("");
         let mut current_timestamp: i64 = -1;
+        let start = Instant::now();
+        let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal changes".into());
         for info in infos.into_iter() {
-            println!("{:?}", info);
             match info {
                 LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
                 LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
@@ -130,6 +220,9 @@ impl VCD {
                 LineInfo::Change(c) => self.add_change(c, current_timestamp),
             }
         }
+        sp.stop_with_message("Changes read correctly".into());
+        let end = Instant::now();
+        println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
     }
 
     fn translate_initializations(&mut self, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
@@ -156,7 +249,7 @@ impl VCD {
                     break;
                 }
                 LineInfo::EndInitializations => {
-                    sp.stop_with_message(String::from("Signals initialized correctly"));
+                    sp.stop_with_message("Signals initialized correctly".into());
                     break;
                 }
                 LineInfo::Timestamp(t) => current_timestamp = t as i64,
@@ -166,7 +259,11 @@ impl VCD {
                         signal.states[0] = State {
                             value: SignalValue::from(value),
                             time: current_timestamp,
-                        }
+                        };
+                        signal.states[1] = State {
+                            value: SignalValue::from(value),
+                            time: current_timestamp,
+                        };
                     })
                 }
             }
@@ -218,11 +315,33 @@ impl VCD {
         println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
         infos
     }
+
+    pub fn to_result_string(&self) -> String {
+        let mut total_coverage: f64 = self
+            .signals
+            .iter()
+            .map(|signal| signal.calculate_coverage() as f64)
+            .sum();
+        total_coverage /= self.signals.len() as f64;
+        let explanation = format!(
+            "# VCD Statistical analysis. Total coverage: {:.2} % over {} signals\n{}\n",
+            total_coverage,
+            self.signals.len(),
+            Signal::result_explanation()
+        );
+        let result_values: Vec<String> = self
+            .signals
+            .iter()
+            .map(|signal| signal.to_result_string())
+            .collect();
+        format!("{}{}", explanation, result_values.join("\n"))
+    }
 }
 
-fn translate_infos(mut infos: Receiver<LineInfo>) {
+fn translate_infos(mut infos: Receiver<LineInfo>) -> VCD {
     let mut vcd = VCD::default();
     infos = vcd.translate_definitions(infos);
     infos = vcd.translate_initializations(infos);
     vcd.translate_changes(infos);
+    vcd
 }

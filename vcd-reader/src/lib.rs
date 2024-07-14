@@ -31,7 +31,7 @@ pub struct Change {
     pub values: Vec<u8>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum SignalValue {
     UP,
     DOWN,
@@ -315,6 +315,17 @@ impl From<u8> for SignalValue {
             b'U' | b'u' | b'H' | b'h' | b'1' => SignalValue::UP,
             b'F' | b'Z' | b'T' | b'z' => SignalValue::Z,
             _ => SignalValue::X,
+        }
+    }
+}
+
+impl Into<char> for SignalValue {
+    fn into(self) -> char {
+        match self {
+            SignalValue::UP => '1',
+            SignalValue::DOWN => '0',
+            SignalValue::X => 'x',
+            SignalValue::Z => 'z',
         }
     }
 }
