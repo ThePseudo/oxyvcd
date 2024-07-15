@@ -4,6 +4,11 @@ use std::{
     str::SplitAsciiWhitespace,
 };
 
+pub struct Configuration<'vcd> {
+    pub in_file: &'vcd str,
+    pub separator: char,
+}
+
 pub struct VCDFile {
     reader: BufReader<File>,
     line: String,
@@ -62,18 +67,18 @@ pub enum LineInfo {
 }
 
 impl VCDFile {
-    pub fn new(file_name: &str) -> Self {
+    pub fn new(configuration: Configuration) -> Self {
         VCDFile {
-            reader: BufReader::new(File::open(file_name).unwrap_or_else(|err| {
+            reader: BufReader::new(File::open(configuration.in_file).unwrap_or_else(|err| {
                 panic!(
                     "FATAL ERROR: File {} could not be opened. Reason: {}",
-                    file_name, err
+                    configuration.in_file, err
                 )
             })),
             line: Default::default(),
             lineno: 0,
             part: Part::Declarations,
-            separator: '<',
+            separator: configuration.separator,
         }
     }
 
@@ -258,7 +263,7 @@ impl VCDFile {
                         line_slice = &line_slice[1..];
                     } else if line_slice.starts_with('p') {
                     }
-                    let mut line_parts = line_slice.split('<');
+                    let mut line_parts = line_slice.split(self.separator);
                     let values = line_parts.next().unwrap();
                     let mut signal_id = line_parts.next().unwrap();
                     if signal_id.starts_with(self.separator) {
@@ -288,7 +293,7 @@ impl VCDFile {
                 line_slice = &line_slice[1..];
             } else if line_slice.starts_with('p') {
             }
-            let mut line_parts = line_slice.split('<');
+            let mut line_parts = line_slice.split(self.separator);
             let values = line_parts.next().unwrap();
             let signal_id = line_parts.next().unwrap();
             return Some(LineInfo::Change(Change {

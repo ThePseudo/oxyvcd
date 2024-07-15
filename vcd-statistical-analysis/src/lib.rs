@@ -13,16 +13,26 @@ use std::{
 use vcd_reader::{Change, SignalValue};
 use vcd_reader::{LineInfo, VCDFile};
 
-pub fn perform_analysis(file_name: &str, out_file: &str) {
+pub struct Configuration {
+    pub in_file: String,
+    pub out_file: String,
+    pub separator: char,
+}
+
+pub fn perform_analysis(c: Configuration) {
     let (tx, rx) = mpsc::sync_channel(1000000);
     let th = thread::spawn(move || translate_infos(rx));
-    VCDFile::new(file_name).into_iter().for_each(|info| {
+    let reader_config = vcd_reader::Configuration {
+        in_file: &c.in_file,
+        separator: c.separator,
+    };
+    VCDFile::new(reader_config).into_iter().for_each(|info| {
         tx.send(info).unwrap();
     });
     drop(tx);
     let vcd = th.join().unwrap();
 
-    let mut writer = BufWriter::new(File::create(out_file).unwrap());
+    let mut writer = BufWriter::new(File::create(c.out_file).unwrap());
     writer
         .write_fmt(format_args!("{}", vcd.to_result_string()))
         .unwrap();
