@@ -53,6 +53,7 @@ struct Signal {
     sub_id: u16,
     name: Box<str>,
     states: [State; 4], // Initial state, current state, opposite state, back to initial state
+    initial_state: State,
 }
 
 impl Signal {
@@ -60,16 +61,11 @@ impl Signal {
         if state.value != SignalValue::X {
             match self.states[0].value {
                 SignalValue::UP => {
-                    if (self.states[1].value == SignalValue::UP
-                        || self.states[1].value == SignalValue::X)
-                        && state.value == SignalValue::DOWN
-                        && self.states[2].value == SignalValue::X
+                    if state.value == SignalValue::DOWN && self.states[2].value == SignalValue::X
                     // update once
                     {
                         self.states[2] = state;
-                    } else if (self.states[1].value == SignalValue::DOWN
-                        || self.states[1].value == SignalValue::X)
-                        && state.value == SignalValue::UP
+                    } else if state.value == SignalValue::UP
                         && self.states[2].value != SignalValue::X // update only when states[2] updated
                         && self.states[3].value == SignalValue::X
                     // update once
@@ -78,16 +74,11 @@ impl Signal {
                     }
                 }
                 SignalValue::DOWN => {
-                    if (self.states[1].value == SignalValue::DOWN
-                        || self.states[1].value == SignalValue::X)
-                        && state.value == SignalValue::UP
-                        && self.states[2].value == SignalValue::X
+                    if state.value == SignalValue::UP && self.states[2].value == SignalValue::X
                     // update once
                     {
                         self.states[2] = state;
-                    } else if (self.states[1].value == SignalValue::UP
-                        || self.states[1].value == SignalValue::X)
-                        && state.value == SignalValue::DOWN
+                    } else if state.value == SignalValue::DOWN
                         && self.states[2].value != SignalValue::X // update only when states[2] updated
                         && self.states[3].value == SignalValue::X
                     // update once
@@ -127,7 +118,7 @@ impl Signal {
     }
 
     fn to_result_string(&self) -> String {
-        let initial_value: char = self.states[0].value.into();
+        let initial_value: char = self.initial_state.value.into();
         format!(
             "{} {}-{} {:.1} {} {} {}",
             self.name,
@@ -159,13 +150,14 @@ impl VCD {
         for sub_id in 0..signal.num_values {
             let mut name = modules.clone();
             if signal.num_values > 1 {
-                name.push_str(&format!("{}", sub_id));
+                name.push_str(&format!("[{}]", sub_id));
             }
             let s = Signal {
                 id: signal.id.clone().into(),
                 sub_id: sub_id.try_into().unwrap(),
                 name: name.into(),
                 states: Default::default(),
+                initial_state: Default::default(),
             };
             let index = self.signals.len();
             self.signals.push(s);
@@ -266,6 +258,10 @@ impl VCD {
                             time: current_timestamp,
                         };
                         signal.states[1] = State {
+                            value: SignalValue::from(value),
+                            time: current_timestamp,
+                        };
+                        signal.initial_state = State {
                             value: SignalValue::from(value),
                             time: current_timestamp,
                         };
