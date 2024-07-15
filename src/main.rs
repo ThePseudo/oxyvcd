@@ -1,5 +1,4 @@
 use clap::Parser;
-use std::env;
 use vcd_statistical_analysis::{self, perform_analysis, Configuration};
 
 #[derive(Parser, Debug)]
@@ -10,7 +9,7 @@ struct Args {
     #[arg(short, long)]
     out_file: String,
     #[arg(short, long, default_value_t = '<')]
-    vcd_separator: char,
+    separator: char,
 }
 
 fn main() {
@@ -18,7 +17,7 @@ fn main() {
     let c = Configuration {
         in_file: args.in_file,
         out_file: args.out_file,
-        separator: args.vcd_separator,
+        separator: args.separator,
     };
     perform_analysis(c);
 }

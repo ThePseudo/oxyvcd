@@ -42,6 +42,7 @@ struct InfoTranslator {
     modules: Vec<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 struct State {
     value: SignalValue,

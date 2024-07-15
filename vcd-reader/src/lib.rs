@@ -259,16 +259,20 @@ impl VCDFile {
                 if line_slice.starts_with('#') {
                     return Some(LineInfo::Timestamp(line_slice[1..].parse().unwrap()));
                 } else {
+                    let mut starts_p = false;
                     if line_slice.starts_with('b') {
                         line_slice = &line_slice[1..];
                     } else if line_slice.starts_with('p') {
+                        starts_p = true;
+                        line_slice = &line_slice[1..];
                     }
                     let mut line_parts = line_slice.split(self.separator);
                     let values = line_parts.next().unwrap();
-                    let mut signal_id = line_parts.next().unwrap();
-                    if signal_id.starts_with(self.separator) {
-                        signal_id = &signal_id[1..];
+                    if starts_p && self.separator == ' ' {
+                        line_parts.next().unwrap();
+                        line_parts.next().unwrap();
                     }
+                    let signal_id = line_parts.next().unwrap();
                     return Some(LineInfo::Change(Change {
                         signal_id: String::from(signal_id),
                         values: values.into(),
@@ -289,12 +293,19 @@ impl VCDFile {
         if line_slice.starts_with('#') {
             return Some(LineInfo::Timestamp(line_slice[1..].parse().unwrap()));
         } else {
+            let mut starts_p = false;
             if line_slice.starts_with('b') {
                 line_slice = &line_slice[1..];
             } else if line_slice.starts_with('p') {
+                starts_p = true;
+                line_slice = &line_slice[1..];
             }
             let mut line_parts = line_slice.split(self.separator);
             let values = line_parts.next().unwrap();
+            if starts_p && self.separator == ' ' {
+                line_parts.next().unwrap();
+                line_parts.next().unwrap();
+            }
             let signal_id = line_parts.next().unwrap();
             return Some(LineInfo::Change(Change {
                 signal_id: String::from(signal_id),
