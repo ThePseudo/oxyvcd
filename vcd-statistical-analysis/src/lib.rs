@@ -3,7 +3,6 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
-    rc::Rc,
     sync::{
         mpsc::{self, Receiver},
         Arc,
@@ -58,41 +57,46 @@ struct Signal {
 
 impl Signal {
     fn add_change(&mut self, state: State) {
-        if self.states[1].value != SignalValue::UP || self.states[1].value != SignalValue::DOWN {
+        if state.value != SignalValue::X {
             match self.states[0].value {
                 SignalValue::UP => {
-                    if self.states[1].value == SignalValue::UP
+                    if (self.states[1].value == SignalValue::UP
+                        || self.states[1].value == SignalValue::X)
                         && state.value == SignalValue::DOWN
-                        && self.states[2].value != SignalValue::X
+                        && self.states[2].value == SignalValue::X
                     // update once
                     {
                         self.states[2] = state;
-                    } else if self.states[1].value == SignalValue::DOWN
+                    } else if (self.states[1].value == SignalValue::DOWN
+                        || self.states[1].value == SignalValue::X)
                         && state.value == SignalValue::UP
                         && self.states[2].value != SignalValue::X // update only when states[2] updated
-                        && self.states[3].value != SignalValue::X
+                        && self.states[3].value == SignalValue::X
                     // update once
                     {
                         self.states[3] = state;
                     }
                 }
                 SignalValue::DOWN => {
-                    if self.states[1].value == SignalValue::DOWN
+                    if (self.states[1].value == SignalValue::DOWN
+                        || self.states[1].value == SignalValue::X)
                         && state.value == SignalValue::UP
-                        && self.states[2].value != SignalValue::X
+                        && self.states[2].value == SignalValue::X
                     // update once
                     {
                         self.states[2] = state;
-                    } else if self.states[1].value == SignalValue::UP
+                    } else if (self.states[1].value == SignalValue::UP
+                        || self.states[1].value == SignalValue::X)
                         && state.value == SignalValue::DOWN
                         && self.states[2].value != SignalValue::X // update only when states[2] updated
-                        && self.states[3].value != SignalValue::X
+                        && self.states[3].value == SignalValue::X
                     // update once
                     {
                         self.states[3] = state;
                     }
                 }
                 _ => {
+                    // starts with X or Z
                     self.states[0] = state;
                 }
             }
@@ -101,9 +105,9 @@ impl Signal {
     }
 
     fn calculate_coverage(&self) -> f32 {
-        let first_transition = 0.5 * ((self.states[2].value != SignalValue::X) as u32 as f32);
-        let second_transition = 0.5 * ((self.states[2].value != SignalValue::X) as u32 as f32);
-        first_transition + second_transition
+        let up_transition = 0.5 * (self.has_transitioned_up() as u32 as f32);
+        let down_transition = 0.5 * (self.has_transitioned_down() as u32 as f32);
+        up_transition + down_transition
     }
 
     fn has_transitioned_up(&self) -> bool {
@@ -150,6 +154,7 @@ struct VCD {
 impl VCD {
     fn push(&mut self, signal: vcd_reader::Signal, translator: &InfoTranslator) {
         let mut modules = translator.modules.join("/");
+        modules.push('/');
         modules.push_str(&signal.name);
         for sub_id in 0..signal.num_values {
             let mut name = modules.clone();
@@ -325,7 +330,7 @@ impl VCD {
         total_coverage /= self.signals.len() as f64;
         let explanation = format!(
             "# VCD Statistical analysis. Total coverage: {:.2} % over {} signals\n{}\n",
-            total_coverage,
+            total_coverage * 100.0,
             self.signals.len(),
             Signal::result_explanation()
         );

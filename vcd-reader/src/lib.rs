@@ -246,7 +246,10 @@ impl VCDFile {
         }
         match line_slice {
             "$dumpports" => return Some(LineInfo::Useless),
-            "$end" => return Some(LineInfo::EndInitializations),
+            "$end" => {
+                self.part = Part::Changes;
+                return Some(LineInfo::EndInitializations);
+            }
             _ => {
                 if line_slice.starts_with('#') {
                     return Some(LineInfo::Timestamp(line_slice[1..].parse().unwrap()));
