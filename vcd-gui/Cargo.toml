@@ -1,0 +1,11 @@
+[package]
+name = "vcd-gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+slint = "1.6.0"
+vcd-statistical-analysis = { path = "../vcd-statistical-analysis" }
+
+[build-dependencies]
+slint-build = "1.6.0"

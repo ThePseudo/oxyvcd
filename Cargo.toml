@@ -1,9 +1,2 @@
-[package]
-name = "vcd"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-vcd-statistical-analysis = { path = "./vcd-statistical-analysis" }
-clap = { version = "4.5.9", features = ["derive"] }
-clap_derive = "4.5"
+[workspace]
+members = ["vcd", "vcd-gui"]
