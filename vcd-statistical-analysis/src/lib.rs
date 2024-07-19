@@ -3,10 +3,8 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
-    sync::{
-        mpsc::{self, Receiver},
-        Arc,
-    },
+    rc::Rc,
+    sync::mpsc::{self, Receiver},
     thread,
     time::Instant,
 };
@@ -39,7 +37,7 @@ pub fn perform_analysis(c: Configuration) {
 }
 
 struct InfoTranslator {
-    modules: Vec<Arc<str>>,
+    modules: Vec<Rc<str>>,
 }
 
 #[allow(dead_code)]
@@ -60,10 +58,10 @@ impl Default for State {
 
 #[derive(Debug)]
 struct Signal {
-    id: Arc<str>,
+    id: Rc<str>,
     sub_id: u16,
-    name: Vec<Arc<str>>,
-    states: [State; 4], // Initial state, current state, opposite state, back to initial state
+    name: Vec<Rc<str>>,
+    states: [State; 3], // Initial state, opposite state, back to initial state
     initial_state: State,
 }
 
@@ -72,29 +70,29 @@ impl Signal {
         if state.value != SignalValue::X {
             match self.states[0].value {
                 SignalValue::UP => {
-                    if state.value == SignalValue::DOWN && self.states[2].value == SignalValue::X
+                    if state.value == SignalValue::DOWN && self.states[1].value == SignalValue::X
+                    // update once
+                    {
+                        self.states[1] = state;
+                    } else if state.value == SignalValue::UP
+                        && self.states[1].value != SignalValue::X // update only when states[2] updated
+                        && self.states[2].value == SignalValue::X
                     // update once
                     {
                         self.states[2] = state;
-                    } else if state.value == SignalValue::UP
-                        && self.states[2].value != SignalValue::X // update only when states[2] updated
-                        && self.states[3].value == SignalValue::X
-                    // update once
-                    {
-                        self.states[3] = state;
                     }
                 }
                 SignalValue::DOWN => {
-                    if state.value == SignalValue::UP && self.states[2].value == SignalValue::X
+                    if state.value == SignalValue::UP && self.states[1].value == SignalValue::X
+                    // update once
+                    {
+                        self.states[1] = state;
+                    } else if state.value == SignalValue::DOWN
+                        && self.states[1].value != SignalValue::X // update only when states[2] updated
+                        && self.states[2].value == SignalValue::X
                     // update once
                     {
                         self.states[2] = state;
-                    } else if state.value == SignalValue::DOWN
-                        && self.states[2].value != SignalValue::X // update only when states[2] updated
-                        && self.states[3].value == SignalValue::X
-                    // update once
-                    {
-                        self.states[3] = state;
                     }
                 }
                 _ => {
@@ -103,7 +101,6 @@ impl Signal {
                 }
             }
         }
-        self.states[1] = state;
     }
 
     fn calculate_coverage(&self) -> f32 {
@@ -114,16 +111,16 @@ impl Signal {
 
     fn has_transitioned_up(&self) -> bool {
         match self.states[0].value {
-            SignalValue::UP => self.states[3].value != SignalValue::X,
-            SignalValue::DOWN => self.states[2].value != SignalValue::X,
+            SignalValue::UP => self.states[2].value != SignalValue::X,
+            SignalValue::DOWN => self.states[1].value != SignalValue::X,
             _ => false,
         }
     }
 
     fn has_transitioned_down(&self) -> bool {
         match self.states[0].value {
-            SignalValue::UP => self.states[2].value != SignalValue::X,
-            SignalValue::DOWN => self.states[3].value != SignalValue::X,
+            SignalValue::UP => self.states[1].value != SignalValue::X,
+            SignalValue::DOWN => self.states[2].value != SignalValue::X,
             _ => false,
         }
     }
@@ -151,7 +148,7 @@ impl Signal {
 #[derive(Default, Debug)]
 struct VCD {
     signals: Vec<Signal>,
-    signals_by_id: HashMap<Arc<str>, usize>,
+    signals_by_id: HashMap<Rc<str>, usize>,
 }
 
 impl VCD {
@@ -359,3 +356,6 @@ fn translate_infos(mut infos: Receiver<LineInfo>) -> VCD {
     vcd.translate_changes(infos);
     vcd
 }
+
+unsafe impl Send for Signal {}
+unsafe impl Send for VCD {}
