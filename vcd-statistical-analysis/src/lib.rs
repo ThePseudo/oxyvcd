@@ -39,7 +39,7 @@ pub fn perform_analysis(c: Configuration) {
 }
 
 struct InfoTranslator {
-    modules: Vec<String>,
+    modules: Vec<Arc<str>>,
 }
 
 #[allow(dead_code)]
@@ -62,7 +62,7 @@ impl Default for State {
 struct Signal {
     id: Arc<str>,
     sub_id: u16,
-    name: Box<str>,
+    name: Vec<Arc<str>>,
     states: [State; 4], // Initial state, current state, opposite state, back to initial state
     initial_state: State,
 }
@@ -132,7 +132,7 @@ impl Signal {
         let initial_value: char = self.initial_state.value.into();
         format!(
             "{} {}-{} {:.1} {} {} {}",
-            self.name,
+            self.name.join("/"),
             self.id,
             self.sub_id,
             self.calculate_coverage(),
@@ -155,18 +155,17 @@ struct VCD {
 
 impl VCD {
     fn push(&mut self, signal: vcd_reader::Signal, translator: &InfoTranslator) {
-        let mut modules = translator.modules.join("/");
-        modules.push('/');
-        modules.push_str(&signal.name);
+        let mut modules = translator.modules.clone();
+        modules.push(signal.name.into_boxed_str().into());
         for sub_id in 0..signal.num_values {
             let mut name = modules.clone();
             if signal.num_values > 1 {
-                name.push_str(&format!("[{}]", sub_id));
+                name.push(format!("[{}]", sub_id).into_boxed_str().into());
             }
             let s = Signal {
                 id: signal.id.clone().into(),
                 sub_id: sub_id.try_into().unwrap(),
-                name: name.into(),
+                name,
                 states: Default::default(),
                 initial_state: Default::default(),
             };
@@ -300,7 +299,9 @@ impl VCD {
                 LineInfo::TimeScaleInfo(s) => {
                     println!("Time scale: {}", s.trim().replace("$end", "").trim())
                 }
-                LineInfo::InScope(module) => translator.modules.push(module),
+                LineInfo::InScope(module) => {
+                    translator.modules.push(module.into_boxed_str().into())
+                }
                 LineInfo::UpScope => {
                     translator.modules.pop().unwrap();
                 }
