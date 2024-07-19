@@ -26,7 +26,7 @@ pub fn perform_analysis(c: Configuration) {
         in_file: &c.in_file,
         separator: c.separator,
     };
-    VCDFile::new(reader_config).into_iter().for_each(|info| {
+    VCDFile::new(reader_config).for_each(|info| {
         tx.send(info).unwrap();
     });
     drop(tx);
@@ -147,6 +147,7 @@ impl Signal {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Default, Debug)]
 struct VCD {
     signals: Vec<Signal>,
@@ -197,7 +198,7 @@ impl VCD {
     }
 
     fn translate_changes(&mut self, infos: Receiver<LineInfo>) {
-        println!("");
+        println!();
         let mut current_timestamp: i64 = -1;
         let start = Instant::now();
         let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal changes".into());
@@ -233,7 +234,7 @@ impl VCD {
     }
 
     fn translate_initializations(&mut self, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
-        println!("");
+        println!();
         let mut current_timestamp: i64 = 0;
         let start = Instant::now();
         let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal initializations".into());
@@ -285,7 +286,7 @@ impl VCD {
     }
 
     fn translate_definitions(&mut self, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
-        println!("");
+        println!();
         let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal declarations".into());
         let start = Instant::now();
         let mut translator = InfoTranslator { modules: vec![] };

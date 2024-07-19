@@ -153,7 +153,7 @@ impl VCDFile {
             Some(quantity_str) => {
                 if quantity_str != "1" {
                     let size_str = &quantity_str[1..quantity_str.len() - 1];
-                    let mut start_end_split = size_str.split(":");
+                    let mut start_end_split = size_str.split(':');
                     let start: i32 = match start_end_split.next() {
                         Some(value) => value.parse().unwrap(),
                         None => return Self::unexpected_eof(self.lineno),
@@ -188,7 +188,7 @@ impl VCDFile {
     fn next_declarations(&mut self) -> Option<LineInfo> {
         // Skip empty lines
         let mut line_slice = "";
-        while line_slice.len() == 0 {
+        while line_slice.is_empty() {
             if self.read_line() == 0 {
                 return None;
             }
@@ -243,21 +243,21 @@ impl VCDFile {
 
     fn next_initializations(&mut self) -> Option<LineInfo> {
         let mut line_slice = "";
-        while line_slice.len() == 0 {
+        while line_slice.is_empty() {
             if self.read_line() == 0 {
                 return None;
             }
             line_slice = self.line.trim();
         }
         match line_slice {
-            "$dumpports" => return Some(LineInfo::Useless),
+            "$dumpports" => Some(LineInfo::Useless),
             "$end" => {
                 self.part = Part::Changes;
-                return Some(LineInfo::EndInitializations);
+                Some(LineInfo::EndInitializations)
             }
             _ => {
-                if line_slice.starts_with('#') {
-                    return Some(LineInfo::Timestamp(line_slice[1..].parse().unwrap()));
+                if let Some(time_str) = line_slice.strip_prefix('#') {
+                    Some(LineInfo::Timestamp(time_str.parse().unwrap()))
                 } else {
                     let mut starts_p = false;
                     if line_slice.starts_with('b') {
@@ -273,10 +273,10 @@ impl VCDFile {
                         line_parts.next().unwrap();
                     }
                     let signal_id = line_parts.next().unwrap();
-                    return Some(LineInfo::Change(Change {
+                    Some(LineInfo::Change(Change {
                         signal_id: String::from(signal_id),
                         values: values.into(),
-                    }));
+                    }))
                 }
             }
         }
@@ -284,14 +284,14 @@ impl VCDFile {
 
     fn next_changes(&mut self) -> Option<LineInfo> {
         let mut line_slice = "";
-        while line_slice.len() == 0 {
+        while line_slice.is_empty() {
             if self.read_line() == 0 {
                 return None;
             }
             line_slice = self.line.trim();
         }
-        if line_slice.starts_with('#') {
-            return Some(LineInfo::Timestamp(line_slice[1..].parse().unwrap()));
+        if let Some(time_str) = line_slice.strip_prefix('#') {
+            Some(LineInfo::Timestamp(time_str.parse().unwrap()))
         } else {
             let mut starts_p = false;
             if line_slice.starts_with('b') {
@@ -307,10 +307,10 @@ impl VCDFile {
                 line_parts.next().unwrap();
             }
             let signal_id = line_parts.next().unwrap();
-            return Some(LineInfo::Change(Change {
+            Some(LineInfo::Change(Change {
                 signal_id: String::from(signal_id),
                 values: values.into(),
-            }));
+            }))
         }
     }
 }
@@ -338,9 +338,9 @@ impl From<u8> for SignalValue {
     }
 }
 
-impl Into<char> for SignalValue {
-    fn into(self) -> char {
-        match self {
+impl From<SignalValue> for char {
+    fn from(val: SignalValue) -> Self {
+        match val {
             SignalValue::UP => '1',
             SignalValue::DOWN => '0',
             SignalValue::X => 'x',
