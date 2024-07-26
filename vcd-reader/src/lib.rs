@@ -149,9 +149,44 @@ impl VCDFile {
     ) -> Option<LineInfo> {
         match var_type {
             "port" => self.manage_var_port(split_line),
-            "wire" => todo!(),
+            "wire" => self.manage_var_wire(split_line),
             _ => Self::unrecognized_symbol(var_type, self.lineno),
         }
+    }
+
+    fn manage_var_wire(&mut self, mut split_line: SplitAsciiWhitespace) -> Option<LineInfo> {
+        let mut s = Signal {
+            num_values: 1,
+            name: String::default().into(),
+            id: String::default().into(),
+            signal_type: SignalType::Gate,
+        };
+        match split_line.next() {
+            Some(quantity_str) => {
+                if quantity_str != "1" {
+                    s.signal_type = SignalType::Bus;
+                    s.num_values = quantity_str.parse().unwrap(); // Inside here should save parsing operations
+                }
+            }
+            None => return Self::unexpected_eof(self.lineno),
+        }
+        match split_line.next() {
+            Some(mut id) => {
+                s.id = {
+                    if id.starts_with(self.separator) {
+                        id = &id[1..];
+                    }
+                    String::from(id).into()
+                }
+            }
+            None => return Self::unexpected_eof(self.lineno),
+        }
+        match split_line.next() {
+            Some(name) => s.name = String::from(name).into(),
+            None => return Self::unexpected_eof(self.lineno),
+        }
+        self.signals.insert(s.id.clone(), s.clone());
+        Some(LineInfo::Signal(s))
     }
 
     fn manage_var_port(&mut self, mut split_line: SplitAsciiWhitespace) -> Option<LineInfo> {
@@ -204,21 +239,21 @@ impl VCDFile {
         match split_line.next() {
             Some(string) => match string {
                 "$date" => {
-                    self.line.clear();
+                    self.line = self.line.replace("$date", "");
                     while !self.line.contains("$end") {
                         self.read_line_noclear();
                     }
                     Some(LineInfo::DateInfo(self.line.clone()))
                 }
                 "$version" => {
-                    self.line.clear();
+                    self.line = self.line.replace("$version", "");
                     while !self.line.contains("$end") {
                         self.read_line_noclear();
                     }
                     Some(LineInfo::VersionInfo(self.line.clone()))
                 }
                 "$timescale" => {
-                    self.line.clear();
+                    self.line = self.line.replace("$timescale", "");
                     while !self.line.contains("$end") {
                         self.read_line_noclear();
                     }
