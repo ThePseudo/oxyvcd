@@ -8,7 +8,7 @@ use std::{
     thread,
     time::Instant,
 };
-use vcd_reader::{Change, SignalValue};
+use vcd_reader::{Change, SignalType, SignalValue};
 use vcd_reader::{LineInfo, VCDFile};
 
 pub struct Configuration {
@@ -63,6 +63,7 @@ struct Signal {
     name: Vec<Rc<str>>,
     states: [State; 3], // Initial state, opposite state, back to initial state
     initial_state: State,
+    signal_type: SignalType,
 }
 
 impl Signal {
@@ -156,6 +157,10 @@ impl VCD {
         let mut modules = translator.modules.clone();
         modules.push(signal.name.into_boxed_str().into());
         for sub_id in 0..signal.num_values {
+            let signal_type = match signal.num_values == 1 {
+                true => SignalType::Gate,
+                false => SignalType::Bus,
+            };
             let mut name = modules.clone();
             if signal.num_values > 1 {
                 name.push(format!("[{}]", sub_id).into_boxed_str().into());
@@ -166,6 +171,7 @@ impl VCD {
                 name,
                 states: Default::default(),
                 initial_state: Default::default(),
+                signal_type,
             };
             let index = self.signals.len();
             self.signals.push(s);

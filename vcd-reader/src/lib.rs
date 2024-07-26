@@ -9,6 +9,12 @@ pub struct Configuration<'vcd> {
     pub separator: char,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SignalType {
+    Bus,
+    Gate,
+}
+
 pub struct VCDFile {
     reader: BufReader<File>,
     line: String,
