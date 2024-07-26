@@ -73,6 +73,7 @@ pub enum LineInfo {
     ParsingError(String),
     EndDefinitions,
     EndInitializations,
+    Dumpports,
     Useless,
 }
 

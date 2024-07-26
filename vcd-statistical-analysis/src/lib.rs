@@ -204,6 +204,7 @@ impl VCD {
                 LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
                 LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
                 LineInfo::VersionInfo(_) => unreachable!("Error: Version info not expected here"),
+                LineInfo::Dumpports => unreachable!("Error: Dumpports not expected here"),
                 LineInfo::TimeScaleInfo(_) => {
                     unreachable!("Error: Time scale info not expected here")
                 }
@@ -256,6 +257,9 @@ impl VCD {
                 LineInfo::EndInitializations => {
                     sp.stop_with_message("Signals initialized correctly".into());
                     break;
+                }
+                LineInfo::Dumpports => {
+                    println!("Dumpports found: VCD ok!")
                 }
                 LineInfo::Timestamp(t) => current_timestamp = t as i64,
                 LineInfo::Change(c) => {
@@ -315,6 +319,7 @@ impl VCD {
                     break;
                 }
                 LineInfo::Useless => {}
+                LineInfo::Dumpports => unreachable!("Error: Dumpports not expected here"),
                 LineInfo::Timestamp(t) => panic!("Unexpected timestamp: {:?}", t),
                 LineInfo::Change(c) => panic!("Unexpected change: {:?}", c),
                 LineInfo::EndInitializations => {
