@@ -1,2 +1,2 @@
 [workspace]
-members = ["vcd", "vcd-gui"]
+members = ["vcd", "vcd-gui", "vcd-indexer"]

@@ -4016,6 +4016,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vcd-indexer"
+version = "0.1.0"
+dependencies = [
+ "vcd-reader",
+]
+
+[[package]]
 name = "vcd-reader"
 version = "0.1.0"
 
