@@ -13,6 +13,7 @@ slint::slint! {
         preferred-height: 480px;
         min-width: 420px;
         min-height: 240px;
+        title: "vcd";
         VerticalLayout {
             padding: 8px;
             alignment: center;
