@@ -88,12 +88,12 @@ impl Signal {
 impl VCD {
     fn push(&mut self, signal: vcd_reader::Signal, translator: &InfoTranslator) {
         for sub_id in 0..signal.num_values {
-            let mut name = signal.name.clone();
+            let mut name = String::default();
             if signal.num_values > 1 {
-                name = name + &format!("[{}]", sub_id);
+                name = String::from(&*name) + &format!("[{}]", sub_id);
             }
             let s = Signal {
-                id: signal.id.clone().into(),
+                id: String::from(&*signal.id).into(),
                 sub_id: sub_id.try_into().unwrap(),
                 name: name.into(),
                 states: Default::default(),
@@ -144,6 +144,7 @@ fn translate_changes(vcd: Arc<RwLock<VCD>>, infos: Receiver<LineInfo>) -> Result
             }
             LineInfo::EndInitializations => {}
             LineInfo::Useless => {}
+            LineInfo::Dumpports => {}
             LineInfo::ParsingError(s) => {
                 return Err(format!("ERROR: found unrecognized symbol: {}", s))
             }
@@ -194,6 +195,7 @@ fn translate_definitions(
             }
             LineInfo::EndDefinitions => break,
             LineInfo::Useless => {}
+            LineInfo::Dumpports => panic!("Not expected dumpports here!"),
             LineInfo::Timestamp(t) => panic!("Unexpected timestamp: {:?}", t),
             LineInfo::Change(c) => panic!("Unexpected change: {:?}", c),
             LineInfo::EndInitializations => {
