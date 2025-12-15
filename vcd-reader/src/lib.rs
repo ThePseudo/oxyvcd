@@ -46,18 +46,13 @@ pub struct Change {
     pub values: Vec<u8>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Default, Eq, PartialEq, Clone, Copy)]
 pub enum SignalValue {
     UP,
     DOWN,
+    #[default]
     X,
     Z,
-}
-
-impl Default for SignalValue {
-    fn default() -> Self {
-        Self::X
-    }
 }
 
 #[derive(Debug)]
@@ -296,10 +291,10 @@ impl VCDFile {
                     let mut starts_p = false;
                     let mut values = &line_slice[0..];
                     if line_slice.starts_with('b') {
-                        values = &line_slice[1..];
+                        values = values.strip_prefix('b').unwrap();
                     } else if line_slice.starts_with('p') {
                         starts_p = true;
-                        values = &line_slice[1..];
+                        values = values.strip_prefix('p').unwrap();
                     }
                     let mut line_parts = values.split(self.separator);
                     let values = line_parts.next().unwrap();
@@ -324,10 +319,10 @@ impl VCDFile {
             let mut starts_p = false;
             let mut values = &line_slice[0..];
             if line_slice.starts_with('b') {
-                values = &line_slice[1..];
-            } else if line_slice.starts_with('p') {
+                values = values.strip_prefix('b').unwrap();
+            } else if line_slice.starts_with('b') {
                 starts_p = true;
-                values = &line_slice[1..];
+                values = values.strip_prefix('p').unwrap();
             }
             let mut line_parts = values.split(self.separator);
             let values = line_parts.next().unwrap();

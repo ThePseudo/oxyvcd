@@ -26,8 +26,7 @@ pub fn index(configuration: Configuration, vcd: Arc<RwLock<VCD>>) -> Result<(), 
         tx.send(info).unwrap();
     });
     drop(tx);
-    let res = th.join().unwrap();
-    res
+    th.join().unwrap()
 }
 
 #[derive(Debug, Default)]
@@ -176,8 +175,10 @@ fn translate_definitions(
                 let mut vcd_lock = vcd.write().unwrap();
                 let last_value = vcd_lock.hierarchy.len();
                 // Create and push the new module
-                let mut m = Module::default();
-                m.parent = translator.current_module_index; // New module has current module as parent
+                let m = Module {
+                    parent: translator.current_module_index,
+                    ..Module::default()
+                };
                 vcd_lock.hierarchy.push(m);
                 // Update old module children
                 vcd_lock.hierarchy[translator.current_module_index]
@@ -211,8 +212,8 @@ fn translate_infos(mut infos: Receiver<LineInfo>, vcd: Arc<RwLock<VCD>>) -> Resu
         Ok(info) => infos = info,
         Err(s) => return Err(s),
     }
-    return match translate_changes(vcd, infos) {
+    match translate_changes(vcd, infos) {
         Ok(_) => Ok(()),
         Err(s) => Err(s),
-    };
+    }
 }
