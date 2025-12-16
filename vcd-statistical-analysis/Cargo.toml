@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 vcd-reader = { path = "../vcd-reader" }
+logger = { path = "../logger" }
 spinners = "4.1"

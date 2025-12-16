@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-slint = "1.6.0"
+slint = "1.14"
 vcd-statistical-analysis = { path = "../vcd-statistical-analysis" }
+logger = { path = "../logger" }
 
 [build-dependencies]
-slint-build = "1.6.0"
+slint-build = "1.14"

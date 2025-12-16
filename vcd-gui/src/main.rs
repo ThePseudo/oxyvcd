@@ -19,37 +19,28 @@ slint::slint! {
             alignment: center;
                 GroupBox {
                     Text {
-                        padding: 32px;
                         vertical-alignment: center;
                         text: "Input VCD file path  ";
-                        color: black;
                     }
                     inpath := LineEdit {
-                        padding: 8px;
                         placeholder-text: "Path";
                     }
                 }
                 GroupBox {
                     Text {
-                        padding: 32px;
                         vertical-alignment: center;
                         text: "Output file path  ";
-                        color: black;
                     }
                     outpath := LineEdit {
-                        padding: 8px;
                         placeholder-text: "Path";
                     }
                 }
                 GroupBox {
                     Text {
-                        padding: 32px;
                         vertical-alignment: center;
                         text: "Separator character  ";
-                        color: black;
                     }
                     sep := LineEdit {
-                        padding: 8px;
                         placeholder-text: "Separator";
                         text: "<";
                     }
@@ -78,6 +69,7 @@ fn main() {
             in_file,
             out_file,
             separator,
+            use_spinner: false,
         });
     });
     window.run().unwrap();

@@ -1,3 +1,4 @@
+use logger::{Log, Priority};
 use spinners::{Spinner, Spinners};
 use std::{
     collections::HashMap,
@@ -15,11 +16,12 @@ pub struct Configuration {
     pub in_file: String,
     pub out_file: String,
     pub separator: char,
+    pub use_spinner: bool,
 }
 
 pub fn perform_analysis(c: Configuration) {
     let (tx, rx) = mpsc::sync_channel(1000000);
-    let th = thread::spawn(move || translate_infos(rx));
+    let th = thread::spawn(move || translate_infos(rx, c.use_spinner));
     let reader_config = vcd_reader::Configuration {
         in_file: &c.in_file,
         separator: c.separator,
@@ -194,11 +196,14 @@ impl VCD {
             })
     }
 
-    fn translate_changes(&mut self, infos: Receiver<LineInfo>) {
-        println!();
+    fn translate_changes(&mut self, infos: Receiver<LineInfo>, use_spinner: bool) {
         let mut current_timestamp: i64 = -1;
         let start = Instant::now();
-        let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal changes".into());
+        Log::write(Priority::Info, "Reading signal changes");
+        let sp = match use_spinner {
+            true => Some(Spinner::new(Spinners::Aesthetic, "".into())),
+            false => None,
+        };
         for info in infos.into_iter() {
             match info {
                 LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
@@ -218,7 +223,7 @@ impl VCD {
                 }
                 LineInfo::Useless => {}
                 LineInfo::ParsingError(s) => {
-                    println!("{}", s);
+                    Log::write(Priority::Error, &s);
                     break;
                 }
 
@@ -226,16 +231,29 @@ impl VCD {
                 LineInfo::Change(c) => self.add_change(c, current_timestamp),
             }
         }
-        sp.stop_with_message("Changes read correctly".into());
+        if let Some(mut s) = sp {
+            s.stop();
+        }
+        Log::write(Priority::Info, "Changes read correctly");
         let end = Instant::now();
-        println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
+        Log::write(
+            Priority::Info,
+            &format!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0),
+        );
     }
 
-    fn translate_initializations(&mut self, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
-        println!();
+    fn translate_initializations(
+        &mut self,
+        infos: Receiver<LineInfo>,
+        use_spinner: bool,
+    ) -> Receiver<LineInfo> {
         let mut current_timestamp: i64 = 0;
         let start = Instant::now();
-        let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal initializations".into());
+        Log::write(Priority::Info, "Reading signal initializations");
+        let sp = match use_spinner {
+            true => Some(Spinner::new(Spinners::Aesthetic, "".into())),
+            false => None,
+        };
         for info in infos.iter() {
             match info {
                 LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
@@ -251,16 +269,17 @@ impl VCD {
                 }
                 LineInfo::Useless => {}
                 LineInfo::ParsingError(s) => {
-                    println!("{}", s);
+                    Log::write(Priority::Error, &s);
                     break;
                 }
                 LineInfo::EndInitializations => {
-                    sp.stop_with_message("Signals initialized correctly".into());
+                    if let Some(mut s) = sp {
+                        s.stop();
+                    }
+                    Log::write(Priority::Info, "Signals initialized correctly");
                     break;
                 }
-                LineInfo::Dumpports => {
-                    println!("Dumpports found: VCD ok!")
-                }
+                LineInfo::Dumpports => Log::write(Priority::Info, "Dumpports found: VCD ok!"),
                 LineInfo::Timestamp(t) => current_timestamp = t as i64,
                 LineInfo::Change(c) => {
                     c.values.into_iter().enumerate().for_each(|(index, value)| {
@@ -282,25 +301,40 @@ impl VCD {
             }
         }
         let end = Instant::now();
-        println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
+        Log::write(
+            Priority::Info,
+            &format!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0),
+        );
         infos
     }
 
-    fn translate_definitions(&mut self, infos: Receiver<LineInfo>) -> Receiver<LineInfo> {
-        println!();
-        let mut sp = Spinner::new(Spinners::Aesthetic, "Reading signal declarations".into());
+    fn translate_definitions(
+        &mut self,
+        infos: Receiver<LineInfo>,
+        use_spinner: bool,
+    ) -> Receiver<LineInfo> {
+        Log::write(Priority::Info, "Reading signal declarations");
+        let sp = match use_spinner {
+            true => Some(Spinner::new(Spinners::Aesthetic, "".into())),
+            false => None,
+        };
         let start = Instant::now();
         let mut translator = InfoTranslator { modules: vec![] };
         for info in infos.iter() {
             match info {
                 LineInfo::Signal(s) => self.push(s, &translator),
-                LineInfo::DateInfo(s) => println!("Date: {}", s.trim().replace("$end", "").trim()),
-                LineInfo::VersionInfo(s) => {
-                    println!("Tool: {}", s.trim().replace("$end", "").trim())
-                }
-                LineInfo::TimeScaleInfo(s) => {
-                    println!("Time scale: {}", s.trim().replace("$end", "").trim())
-                }
+                LineInfo::DateInfo(s) => Log::write(
+                    Priority::Info,
+                    &format!("Date: {}", s.trim().replace("$end", "").trim()),
+                ),
+                LineInfo::VersionInfo(s) => Log::write(
+                    Priority::Info,
+                    &format!("Tool: {}", s.trim().replace("$end", "").trim()),
+                ),
+                LineInfo::TimeScaleInfo(s) => Log::write(
+                    Priority::Info,
+                    &format!("Time scale: {}", s.trim().replace("$end", "").trim()),
+                ),
                 LineInfo::InScope(module) => {
                     translator.modules.push(module.into_boxed_str().into())
                 }
@@ -308,14 +342,20 @@ impl VCD {
                     translator.modules.pop().unwrap();
                 }
                 LineInfo::ParsingError(s) => {
-                    println!("{}", s);
+                    Log::write(Priority::Error, &s);
                     break;
                 }
                 LineInfo::EndDefinitions => {
-                    sp.stop_with_message(format!(
-                        "Signals read correctly. Number of signals: {}",
-                        self.signals.len()
-                    ));
+                    if let Some(mut s) = sp {
+                        s.stop();
+                    }
+                    Log::write(
+                        Priority::Info,
+                        &format!(
+                            "Signals read correctly. Number of signals: {}",
+                            self.signals.len()
+                        ),
+                    );
                     break;
                 }
                 LineInfo::Useless => {}
@@ -328,7 +368,10 @@ impl VCD {
             }
         }
         let end = Instant::now();
-        println!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0);
+        Log::write(
+            Priority::Info,
+            &format!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0),
+        );
         infos
     }
 
@@ -354,11 +397,11 @@ impl VCD {
     }
 }
 
-fn translate_infos(mut infos: Receiver<LineInfo>) -> VCD {
+fn translate_infos(mut infos: Receiver<LineInfo>, use_spinner: bool) -> VCD {
     let mut vcd = VCD::default();
-    infos = vcd.translate_definitions(infos);
-    infos = vcd.translate_initializations(infos);
-    vcd.translate_changes(infos);
+    infos = vcd.translate_definitions(infos, use_spinner);
+    infos = vcd.translate_initializations(infos, use_spinner);
+    vcd.translate_changes(infos, use_spinner);
     vcd
 }
 
