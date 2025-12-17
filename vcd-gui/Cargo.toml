@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 slint = "1.14"
+native-dialog = "0.9"
 vcd-statistical-analysis = { path = "../vcd-statistical-analysis" }
 logger = { path = "../logger" }
 
