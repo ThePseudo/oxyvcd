@@ -1,12 +1,10 @@
+use std::rc::Rc;
+use std::thread::JoinHandle;
 use std::{
     collections::HashMap,
-    sync::{
-        mpsc::{self, Receiver},
-        Arc, RwLock,
-    },
+    sync::mpsc::{self, Receiver},
     thread,
 };
-
 use vcd_reader::{Change, LineInfo, SignalValue, VCDFile};
 
 pub struct Configuration {
@@ -14,10 +12,11 @@ pub struct Configuration {
     pub separator: char,
 }
 
-pub fn index(configuration: Configuration, vcd: Arc<RwLock<VCD>>) -> Result<(), String> {
+unsafe impl Send for VCD {}
+
+pub fn start_indexing(configuration: Configuration) -> JoinHandle<Result<VCD, String>> {
     let (tx, rx) = mpsc::sync_channel(1000000);
-    let vcd1 = vcd.clone();
-    let th = thread::spawn(move || translate_infos(rx, vcd1));
+    let th = thread::spawn(move || translate_infos(rx));
     let reader_config = vcd_reader::Configuration {
         in_file: &configuration.in_file,
         separator: configuration.separator,
@@ -26,7 +25,7 @@ pub fn index(configuration: Configuration, vcd: Arc<RwLock<VCD>>) -> Result<(), 
         tx.send(info).unwrap();
     });
     drop(tx);
-    th.join().unwrap()
+    th
 }
 
 #[derive(Debug, Default)]
@@ -43,14 +42,14 @@ pub enum Node {
 #[derive(Debug, Default)]
 pub struct Module {
     pub parent: usize,
-    pub children: HashMap<Arc<str>, Node>,
+    pub children: HashMap<Rc<str>, Node>,
 }
 
 #[derive(Debug)]
 pub struct Signal {
-    pub id: Arc<str>,
+    pub id: Rc<str>,
     pub sub_id: u16,
-    pub name: Arc<str>,
+    pub name: Rc<str>,
     pub parent_index: usize,
     pub states: Vec<State>,
 }
@@ -66,7 +65,7 @@ pub struct State {
 pub struct VCD {
     pub hierarchy: Vec<Module>,
     pub signals: Vec<Signal>,
-    pub signals_by_id: HashMap<Arc<str>, usize>,
+    pub signals_by_id: HashMap<Rc<str>, usize>,
 }
 
 impl Default for State {
@@ -126,7 +125,7 @@ impl VCD {
     }
 }
 
-fn translate_changes(vcd: Arc<RwLock<VCD>>, infos: Receiver<LineInfo>) -> Result<(), String> {
+fn translate_changes(vcd: &mut VCD, infos: Receiver<LineInfo>) -> Result<(), String> {
     let mut current_timestamp: i64 = -1;
     for info in infos.into_iter() {
         match info {
@@ -149,20 +148,20 @@ fn translate_changes(vcd: Arc<RwLock<VCD>>, infos: Receiver<LineInfo>) -> Result
             }
 
             LineInfo::Timestamp(t) => current_timestamp = t as i64,
-            LineInfo::Change(c) => vcd.write().unwrap().add_change(c, current_timestamp),
+            LineInfo::Change(c) => vcd.add_change(c, current_timestamp),
         }
     }
     Ok(())
 }
 
 fn translate_definitions(
-    vcd: Arc<RwLock<VCD>>,
+    vcd: &mut VCD,
     infos: Receiver<LineInfo>,
 ) -> Result<Receiver<LineInfo>, String> {
     let mut translator = InfoTranslator::default();
     for info in infos.iter() {
         match info {
-            LineInfo::Signal(s) => vcd.write().unwrap().push(s, &translator),
+            LineInfo::Signal(s) => vcd.push(s, &translator),
             LineInfo::DateInfo(s) => println!("Date: {}", s.trim().replace("$end", "").trim()),
             LineInfo::VersionInfo(s) => {
                 println!("Tool: {}", s.trim().replace("$end", "").trim())
@@ -172,16 +171,15 @@ fn translate_definitions(
             }
             LineInfo::InScope(module) => {
                 // Gather last value index
-                let mut vcd_lock = vcd.write().unwrap();
-                let last_value = vcd_lock.hierarchy.len();
+                let last_value = vcd.hierarchy.len();
                 // Create and push the new module
                 let m = Module {
                     parent: translator.current_module_index,
                     ..Module::default()
                 };
-                vcd_lock.hierarchy.push(m);
+                vcd.hierarchy.push(m);
                 // Update old module children
-                vcd_lock.hierarchy[translator.current_module_index]
+                vcd.hierarchy[translator.current_module_index]
                     .children
                     .insert(module.into(), Node::Module(last_value));
                 // Update current module
@@ -189,7 +187,7 @@ fn translate_definitions(
             }
             LineInfo::UpScope => {
                 translator.current_module_index =
-                    vcd.write().unwrap().hierarchy[translator.current_module_index].parent;
+                    vcd.hierarchy[translator.current_module_index].parent;
             }
             LineInfo::ParsingError(s) => {
                 return Err(format!("ERROR: unrecognized symbol {}", s));
@@ -207,13 +205,14 @@ fn translate_definitions(
     Ok(infos)
 }
 
-fn translate_infos(mut infos: Receiver<LineInfo>, vcd: Arc<RwLock<VCD>>) -> Result<(), String> {
-    match translate_definitions(vcd.clone(), infos) {
+fn translate_infos(mut infos: Receiver<LineInfo>) -> Result<VCD, String> {
+    let mut vcd = VCD::default();
+    match translate_definitions(&mut vcd, infos) {
         Ok(info) => infos = info,
         Err(s) => return Err(s),
     }
-    match translate_changes(vcd, infos) {
-        Ok(_) => Ok(()),
+    match translate_changes(&mut vcd, infos) {
+        Ok(_) => Ok(vcd),
         Err(s) => Err(s),
     }
 }
