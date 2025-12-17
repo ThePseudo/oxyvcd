@@ -296,6 +296,15 @@ impl VCDFile {
                         starts_p = true;
                         values = values.strip_prefix('p').unwrap();
                     }
+                    if self.separator == ' ' && line_slice.find(' ').is_none() {
+                        // In this case there is only 1 value, the rest is the ID
+                        let signal_id = &line_slice[1..];
+                        let value = &line_slice[0..0];
+                        return Some(LineInfo::Change(Change {
+                            signal_id: String::from(signal_id),
+                            values: value.into(),
+                        }));
+                    }
                     let mut line_parts = values.split(self.separator);
                     let values = line_parts.next().unwrap();
                     if starts_p && self.separator == ' ' {
@@ -323,6 +332,15 @@ impl VCDFile {
             } else if line_slice.starts_with('b') {
                 starts_p = true;
                 values = values.strip_prefix('p').unwrap();
+            }
+            if self.separator == ' ' && line_slice.find(' ').is_none() {
+                // In this case there is only 1 value, the rest is the ID
+                let signal_id = &line_slice[1..];
+                let value = &line_slice[0..0];
+                return Some(LineInfo::Change(Change {
+                    signal_id: String::from(signal_id),
+                    values: value.into(),
+                }));
             }
             let mut line_parts = values.split(self.separator);
             let values = line_parts.next().unwrap();
