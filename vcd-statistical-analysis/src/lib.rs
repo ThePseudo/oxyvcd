@@ -35,19 +35,20 @@ pub fn perform_analysis(c: Configuration) -> Result<VCD, String> {
         in_file: &c.in_file,
         separator: c.separator,
     };
-    let result = VCDFile::new(reader_config)?
+    let result: Vec<String> = VCDFile::new(reader_config)?
         .map(|info| {
             if let Ok(in_info) = info {
-                tx.send(in_info).map_err(|err| err.to_string())
+                let _ = tx.send(in_info);
+                Ok(())
             } else {
                 Err(info.err().unwrap())
             }
         })
         .filter(|res| res.is_err())
-        .map(|res| res.err())
-        .next();
-    if let Some(err) = result {
-        return Err(err.unwrap());
+        .map(|res| res.err().unwrap())
+        .collect();
+    if !result.is_empty() {
+        return Err(result.join("\n"));
     }
     drop(tx);
     th.join().unwrap()
