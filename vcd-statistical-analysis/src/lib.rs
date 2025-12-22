@@ -10,7 +10,7 @@ use std::{
     time::Instant,
 };
 use vcd_reader::{Change, SignalValue};
-use vcd_reader::{LineInfo, VCDFile};
+use vcd_reader::{LineInfo, LineValue, VCDFile};
 
 pub struct Configuration {
     pub in_file: String,
@@ -19,23 +19,38 @@ pub struct Configuration {
     pub use_spinner: bool,
 }
 
-pub fn perform_analysis(c: Configuration) {
+pub fn perform_analysis_and_save(c: Configuration) -> Result<(), String> {
+    let out_file = c.out_file.clone();
+    let vcd = perform_analysis(c)?;
+    let mut writer = BufWriter::new(File::create(out_file).map_err(|err| err.to_string())?);
+    writer
+        .write_fmt(format_args!("{}", vcd.to_result_string()))
+        .map_err(|err| err.to_string())
+}
+
+pub fn perform_analysis(c: Configuration) -> Result<VCD, String> {
     let (tx, rx) = mpsc::sync_channel(1000000);
     let th = thread::spawn(move || translate_infos(rx, c.use_spinner));
     let reader_config = vcd_reader::Configuration {
         in_file: &c.in_file,
         separator: c.separator,
     };
-    VCDFile::new(reader_config).for_each(|info| {
-        tx.send(info).unwrap();
-    });
+    let result = VCDFile::new(reader_config)?
+        .map(|info| {
+            if let Ok(in_info) = info {
+                tx.send(in_info).map_err(|err| err.to_string())
+            } else {
+                Err(info.err().unwrap())
+            }
+        })
+        .filter(|res| res.is_err())
+        .map(|res| res.err())
+        .next();
+    if let Some(err) = result {
+        return Err(err.unwrap());
+    }
     drop(tx);
-    let vcd = th.join().unwrap();
-
-    let mut writer = BufWriter::new(File::create(c.out_file).unwrap());
-    writer
-        .write_fmt(format_args!("{}", vcd.to_result_string()))
-        .unwrap();
+    th.join().unwrap()
 }
 
 struct InfoTranslator {
@@ -44,9 +59,9 @@ struct InfoTranslator {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
-struct State {
-    value: SignalValue,
-    time: i64,
+pub struct State {
+    pub value: SignalValue,
+    pub time: i64,
 }
 
 impl Default for State {
@@ -59,12 +74,12 @@ impl Default for State {
 }
 
 #[derive(Debug)]
-struct Signal {
-    id: Rc<str>,
-    sub_id: u16,
-    name: Vec<Rc<str>>,
-    states: [State; 3], // Initial state, opposite state, back to initial state
-    initial_state: State,
+pub struct Signal {
+    pub id: Rc<str>,
+    pub sub_id: u16,
+    pub name: Vec<Rc<str>>,
+    pub states: [State; 3], // Initial state, opposite state, back to initial state
+    pub initial_state: State,
 }
 
 impl Signal {
@@ -148,9 +163,9 @@ impl Signal {
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Default, Debug)]
-struct VCD {
-    signals: Vec<Signal>,
-    signals_by_id: HashMap<Rc<str>, usize>,
+pub struct VCD {
+    pub signals: Vec<Signal>,
+    pub signals_by_id: HashMap<Rc<str>, usize>,
 }
 
 impl VCD {
@@ -196,7 +211,11 @@ impl VCD {
             })
     }
 
-    fn translate_changes(&mut self, infos: Receiver<LineInfo>, use_spinner: bool) {
+    fn translate_changes(
+        &mut self,
+        infos: Receiver<LineInfo>,
+        use_spinner: bool,
+    ) -> Result<(), String> {
         let mut current_timestamp: i64 = -1;
         let start = Instant::now();
         Log::write(Priority::Info, "Reading signal changes");
@@ -205,30 +224,29 @@ impl VCD {
             false => None,
         };
         for info in infos.into_iter() {
-            match info {
-                LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
-                LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
-                LineInfo::VersionInfo(_) => unreachable!("Error: Version info not expected here"),
-                LineInfo::Dumpports => unreachable!("Error: Dumpports not expected here"),
-                LineInfo::TimeScaleInfo(_) => {
+            match info.value {
+                LineValue::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
+                LineValue::DateInfo(_) => unreachable!("Error: Date info not expected here"),
+                LineValue::VersionInfo(_) => unreachable!("Error: Version info not expected here"),
+                LineValue::Dumpports => unreachable!("Error: Dumpports not expected here"),
+                LineValue::TimeScaleInfo(_) => {
                     unreachable!("Error: Time scale info not expected here")
                 }
-                LineInfo::InScope(_) => unreachable!("Error: Scope definitions not expected here"),
-                LineInfo::UpScope => unreachable!("Error: Upscope not expected here"),
-                LineInfo::EndDefinitions => {
+                LineValue::InScope(_) => unreachable!("Error: Scope definitions not expected here"),
+                LineValue::UpScope => unreachable!("Error: Upscope not expected here"),
+                LineValue::EndDefinitions => {
                     unreachable!("Error: Definitions should have already ended")
                 }
-                LineInfo::EndInitializations => {
+                LineValue::EndInitializations => {
                     unreachable!("Error: Initializations should have already ended")
                 }
-                LineInfo::Useless => {}
-                LineInfo::ParsingError(s) => {
-                    Log::write(Priority::Error, &s);
-                    break;
+                LineValue::Useless => {}
+                LineValue::ParsingError(s) => {
+                    return Err(format!("Line {}: {}", info.line_number, s));
                 }
 
-                LineInfo::Timestamp(t) => current_timestamp = t as i64,
-                LineInfo::Change(c) => self.add_change(c, current_timestamp),
+                LineValue::Timestamp(t) => current_timestamp = t as i64,
+                LineValue::Change(c) => self.add_change(c, current_timestamp),
             }
         }
         if let Some(mut s) = sp {
@@ -240,13 +258,14 @@ impl VCD {
             Priority::Info,
             &format!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0),
         );
+        Ok(())
     }
 
     fn translate_initializations(
         &mut self,
         infos: Receiver<LineInfo>,
         use_spinner: bool,
-    ) -> Receiver<LineInfo> {
+    ) -> Result<Receiver<LineInfo>, String> {
         let mut current_timestamp: i64 = 0;
         let start = Instant::now();
         Log::write(Priority::Info, "Reading signal initializations");
@@ -255,33 +274,32 @@ impl VCD {
             false => None,
         };
         for info in infos.iter() {
-            match info {
-                LineInfo::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
-                LineInfo::DateInfo(_) => unreachable!("Error: Date info not expected here"),
-                LineInfo::VersionInfo(_) => unreachable!("Error: Version info not expected here"),
-                LineInfo::TimeScaleInfo(_) => {
+            match info.value {
+                LineValue::Signal(_) => unreachable!("Error: Signal declaration in initialization"),
+                LineValue::DateInfo(_) => unreachable!("Error: Date info not expected here"),
+                LineValue::VersionInfo(_) => unreachable!("Error: Version info not expected here"),
+                LineValue::TimeScaleInfo(_) => {
                     unreachable!("Error: Time scale info not expected here")
                 }
-                LineInfo::InScope(_) => unreachable!("Error: Scope definitions not expected here"),
-                LineInfo::UpScope => unreachable!("Error: Upscope not expected here"),
-                LineInfo::EndDefinitions => {
+                LineValue::InScope(_) => unreachable!("Error: Scope definitions not expected here"),
+                LineValue::UpScope => unreachable!("Error: Upscope not expected here"),
+                LineValue::EndDefinitions => {
                     unreachable!("Error: Definitions should have already ended")
                 }
-                LineInfo::Useless => {}
-                LineInfo::ParsingError(s) => {
-                    Log::write(Priority::Error, &s);
-                    break;
+                LineValue::Useless => {}
+                LineValue::ParsingError(s) => {
+                    return Err(format!("Line: {}: {}", info.line_number, s));
                 }
-                LineInfo::EndInitializations => {
+                LineValue::EndInitializations => {
                     if let Some(mut s) = sp {
                         s.stop();
                     }
                     Log::write(Priority::Info, "Signals initialized correctly");
                     break;
                 }
-                LineInfo::Dumpports => Log::write(Priority::Info, "Dumpports found: VCD ok!"),
-                LineInfo::Timestamp(t) => current_timestamp = t as i64,
-                LineInfo::Change(c) => {
+                LineValue::Dumpports => Log::write(Priority::Info, "Dumpports found: VCD ok!"),
+                LineValue::Timestamp(t) => current_timestamp = t as i64,
+                LineValue::Change(c) => {
                     c.values.into_iter().enumerate().for_each(|(index, value)| {
                         let signal = self.get_signal(&c.signal_id, index);
                         signal.states[0] = State {
@@ -305,14 +323,14 @@ impl VCD {
             Priority::Info,
             &format!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0),
         );
-        infos
+        Ok(infos)
     }
 
     fn translate_definitions(
         &mut self,
         infos: Receiver<LineInfo>,
         use_spinner: bool,
-    ) -> Receiver<LineInfo> {
+    ) -> Result<Receiver<LineInfo>, String> {
         Log::write(Priority::Info, "Reading signal declarations");
         let sp = match use_spinner {
             true => Some(Spinner::new(Spinners::Aesthetic, "".into())),
@@ -321,31 +339,30 @@ impl VCD {
         let start = Instant::now();
         let mut translator = InfoTranslator { modules: vec![] };
         for info in infos.iter() {
-            match info {
-                LineInfo::Signal(s) => self.push(s, &translator),
-                LineInfo::DateInfo(s) => Log::write(
+            match info.value {
+                LineValue::Signal(s) => self.push(s, &translator),
+                LineValue::DateInfo(s) => Log::write(
                     Priority::Info,
                     &format!("Date: {}", s.trim().replace("$end", "").trim()),
                 ),
-                LineInfo::VersionInfo(s) => Log::write(
+                LineValue::VersionInfo(s) => Log::write(
                     Priority::Info,
                     &format!("Tool: {}", s.trim().replace("$end", "").trim()),
                 ),
-                LineInfo::TimeScaleInfo(s) => Log::write(
+                LineValue::TimeScaleInfo(s) => Log::write(
                     Priority::Info,
                     &format!("Time scale: {}", s.trim().replace("$end", "").trim()),
                 ),
-                LineInfo::InScope(module) => {
+                LineValue::InScope(module) => {
                     translator.modules.push(module.into_boxed_str().into())
                 }
-                LineInfo::UpScope => {
+                LineValue::UpScope => {
                     translator.modules.pop().unwrap();
                 }
-                LineInfo::ParsingError(s) => {
-                    Log::write(Priority::Error, &s);
-                    break;
+                LineValue::ParsingError(s) => {
+                    return Err(format!("Line: {}: {}", info.line_number, s))
                 }
-                LineInfo::EndDefinitions => {
+                LineValue::EndDefinitions => {
                     if let Some(mut s) = sp {
                         s.stop();
                     }
@@ -358,11 +375,11 @@ impl VCD {
                     );
                     break;
                 }
-                LineInfo::Useless => {}
-                LineInfo::Dumpports => unreachable!("Error: Dumpports not expected here"),
-                LineInfo::Timestamp(t) => panic!("Unexpected timestamp: {:?}", t),
-                LineInfo::Change(c) => panic!("Unexpected change: {:?}", c),
-                LineInfo::EndInitializations => {
+                LineValue::Useless => {}
+                LineValue::Dumpports => unreachable!("Error: Dumpports not expected here"),
+                LineValue::Timestamp(t) => panic!("Unexpected timestamp: {:?}", t),
+                LineValue::Change(c) => panic!("Unexpected change: {:?}", c),
+                LineValue::EndInitializations => {
                     panic!("End initializations found before the beginning!")
                 }
             }
@@ -372,7 +389,7 @@ impl VCD {
             Priority::Info,
             &format!("Duration: {} s", (end - start).as_millis() as f64 / 1000.0),
         );
-        infos
+        Ok(infos)
     }
 
     pub fn to_result_string(&self) -> String {
@@ -397,12 +414,12 @@ impl VCD {
     }
 }
 
-fn translate_infos(mut infos: Receiver<LineInfo>, use_spinner: bool) -> VCD {
+fn translate_infos(mut infos: Receiver<LineInfo>, use_spinner: bool) -> Result<VCD, String> {
     let mut vcd = VCD::default();
-    infos = vcd.translate_definitions(infos, use_spinner);
-    infos = vcd.translate_initializations(infos, use_spinner);
-    vcd.translate_changes(infos, use_spinner);
-    vcd
+    infos = vcd.translate_definitions(infos, use_spinner)?;
+    infos = vcd.translate_initializations(infos, use_spinner)?;
+    vcd.translate_changes(infos, use_spinner)?;
+    Ok(vcd)
 }
 
 unsafe impl Send for Signal {}
