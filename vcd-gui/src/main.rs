@@ -1,7 +1,6 @@
 use slint::SharedString;
-use std::sync::Mutex;
 use std::thread;
-use vcd_statistical_analysis::{perform_analysis, Configuration};
+use vcd_statistical_analysis::{perform_analysis_and_save, Configuration};
 
 slint::slint! {
     import { Button, GroupBox, LineEdit } from "std-widgets.slint";
@@ -107,37 +106,47 @@ fn main() {
     }
     {
         let weak_window = window.as_weak();
+
         window.on_button_pressed(move || {
-            let in_window = Mutex::new(weak_window.upgrade().unwrap());
-            in_window.lock().unwrap().set_interface_enabled(false);
-            let in_file = in_window.lock().unwrap().get_in_path().to_string();
-            let out_file = in_window.lock().unwrap().get_out_path().to_string();
+            let in_window = weak_window.upgrade().unwrap();
+            in_window.set_interface_enabled(false);
+            let in_file = in_window.get_in_path().to_string();
+            let out_file = in_window.get_out_path().to_string();
             let out_file_txt = out_file.clone();
             let separator = in_window
-                .lock()
-                .unwrap()
                 .get_separator()
                 .to_string()
                 .chars()
                 .next()
                 .unwrap_or(' ');
-            in_window
-                .lock()
-                .unwrap()
-                .set_status_text("Computing VCD statystical analysis...".into());
+            in_window.set_status_text("Computing VCD statystical analysis...".into());
+
+            let weak_window_2 = weak_window.clone();
             thread::spawn(move || {
-                perform_analysis(Configuration {
+                if let Err(err) = perform_analysis_and_save(Configuration {
                     in_file,
                     out_file,
                     separator,
                     use_spinner: false,
-                });
+                }) {
+                    slint::invoke_from_event_loop(move || {
+                        weak_window_2
+                            .upgrade()
+                            .unwrap()
+                            .set_status_text(err.to_string().into());
+                        weak_window_2.upgrade().unwrap().set_interface_enabled(true);
+                    })
+                    .unwrap();
+                } else {
+                    slint::invoke_from_event_loop(move || {
+                        weak_window_2.upgrade().unwrap().set_status_text(
+                            format!("VCD analyzed. Result in {}", out_file_txt).into(),
+                        );
+                        weak_window_2.upgrade().unwrap().set_interface_enabled(true);
+                    })
+                    .unwrap();
+                }
             });
-            in_window.lock().unwrap().set_interface_enabled(true);
-            in_window
-                .lock()
-                .unwrap()
-                .set_status_text(format!("VCD analyzed. Result in {}", out_file_txt).into());
         });
     }
     {
