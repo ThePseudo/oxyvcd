@@ -1,7 +1,7 @@
 use clap::Parser;
 use logger::Log;
 use std::io::stdout;
-use vcd_statistical_analysis::{self, perform_analysis, Configuration};
+use vcd_statistical_analysis::{self, perform_analysis_and_save, Configuration};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -26,5 +26,7 @@ fn main() {
         use_spinner: true,
     };
     Log::add(Box::new(stdout().lock()));
-    perform_analysis(c);
+    if let Err(e) = perform_analysis_and_save(c) {
+        Log::write(logger::Priority::Error, &e.to_string());
+    }
 }

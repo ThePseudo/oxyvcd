@@ -4999,6 +4999,7 @@ dependencies = [
 name = "vcd-indexer"
 version = "0.1.0"
 dependencies = [
+ "logger",
  "vcd-reader",
 ]
 
@@ -5022,6 +5023,7 @@ dependencies = [
 name = "vcd-wave"
 version = "0.1.0"
 dependencies = [
+ "native-dialog",
  "slint",
  "slint-build",
  "vcd-indexer",
