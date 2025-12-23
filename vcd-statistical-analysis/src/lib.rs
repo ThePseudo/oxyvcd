@@ -35,6 +35,7 @@ pub fn perform_analysis(c: Configuration) -> Result<VCD, String> {
         in_file: &c.in_file,
         separator: c.separator,
     };
+
     let result: Vec<String> = VCDFile::new(reader_config)?
         .map(|info| {
             if let Ok(in_info) = info {
@@ -47,10 +48,10 @@ pub fn perform_analysis(c: Configuration) -> Result<VCD, String> {
         .filter(|res| res.is_err())
         .map(|res| res.err().unwrap())
         .collect();
+    drop(tx);
     if !result.is_empty() {
         return Err(result.join("\n"));
     }
-    drop(tx);
     th.join().unwrap()
 }
 
