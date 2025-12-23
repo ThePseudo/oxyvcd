@@ -1,7 +1,8 @@
 use colored::Colorize;
+use lazy_static::lazy_static;
 use std::fmt::Display;
 use std::io::Write;
-use std::sync::{LazyLock, Mutex};
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -22,46 +23,43 @@ impl Display for Priority {
     }
 }
 
-pub struct Log {
-    sinks: Vec<Box<dyn Write>>,
-    buffer: String,
+lazy_static! {
+    static ref LOG: Log = Log {
+        sinks: Mutex::new(vec![]),
+        buffer: Mutex::new(String::new())
+    };
 }
 
-static LOG: LazyLock<Mutex<Log>> = LazyLock::new(|| Mutex::new(Log::new()));
-
 unsafe impl std::marker::Send for Log {}
+unsafe impl std::marker::Sync for Log {}
+
+pub struct Log {
+    sinks: Mutex<Vec<Box<dyn Write>>>,
+    buffer: Mutex<String>,
+}
 
 impl Log {
-    fn new() -> Self {
-        let l = Log {
-            sinks: vec![],
-            buffer: String::new(),
-        };
-        thread::spawn(|| {
-            loop {
-                thread::sleep(Duration::from_secs(1));
-                let sinks = &mut LOG.lock().unwrap().sinks;
-                let mut lock = LOG.lock().unwrap();
-                for sink in sinks {
-                    write!(sink, "{}", lock.buffer).unwrap();
-                }
-                lock.buffer.clear();
-            }
-        });
-        l
-    }
-
     pub fn add(elem: Box<dyn Write>) {
-        LOG.lock().unwrap().sinks.push(elem)
+        if LOG.sinks.lock().unwrap().is_empty() {
+            thread::spawn(move || {
+                loop {
+                    thread::sleep(Duration::from_millis(50));
+                    let mut buffer_lock = LOG.buffer.lock().unwrap();
+                    for sink in LOG.sinks.lock().unwrap().iter_mut() {
+                        let _ = sink.write_all(buffer_lock.as_bytes());
+                        let _ = sink.flush();
+                    }
+                    buffer_lock.clear();
+                }
+            });
+        }
+        LOG.sinks.lock().unwrap().push(elem);
     }
 
     pub fn write(priority: Priority, output: &str) {
-        if LOG.lock().unwrap().sinks.is_empty() {
-            return;
-        }
-        LOG.lock()
+        LOG.buffer
+            .lock()
             .unwrap()
-            .buffer
             .push_str(&format!("{}: {}\n", priority, output));
     }
 }
